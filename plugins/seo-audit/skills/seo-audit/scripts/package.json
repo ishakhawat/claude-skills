@@ -1,0 +1,9 @@
+{
+  "name": "claude-seo-audit-scripts",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "lighthouse": "12.6.0",
+    "puppeteer-core": "23.11.1"
+  }
+}

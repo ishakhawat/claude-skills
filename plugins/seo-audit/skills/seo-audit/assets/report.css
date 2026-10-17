@@ -1,0 +1,129 @@
+/* ===== Design tokens ===== */
+:root{
+  --bg:#f5f6f8; --card:#ffffff; --line:#e3e6ea; --line-soft:#eceef1;
+  --ink:#1b2430; --body:#2b3440; --muted:#5f6b78; --faint:#8a94a0;
+  --link:#2f6ea8; --eyebrow:#3a78b5;
+  --crit:#b3261e; --crit-bg:#fbe4e4;
+  --high:#a8661a; --high-bg:#fdf0dc;
+  --med:#2f62a3;  --med-bg:#e3ecf8;
+  --low:#5b6470;  --low-bg:#eceef1;
+  --good:#2e7d43; --good-bg:#e5f2e8; --fix-bg:#e8f3ea; --fix-bar:#3c8a4e;
+  --code-bg:#f1f2f5; --del-bg:#fbe4e4; --add-bg:#e3f3e6;
+  --head:"Manrope",system-ui,sans-serif; --sans:"Source Sans 3",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--body);font:400 17px/1.6 var(--sans);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.wrap{max-width:1120px;margin:0 auto;padding:44px 36px 64px}
+a{color:var(--link);text-decoration:none}
+code,.mono{font-variant-ligatures:none;font-family:var(--mono);font-size:.86em;background:var(--code-bg);border-radius:4px;padding:1px 5px;color:var(--ink)}
+h1,h2,h3{font-family:var(--head);color:var(--ink);letter-spacing:-.015em;margin:0}
+
+/* ===== Header ===== */
+.eyebrow{font:600 13px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--eyebrow);margin-bottom:14px}
+.title{font-size:46px;font-weight:800;line-height:1.1;margin-bottom:16px}
+.lede{font-size:19px;color:var(--muted);max-width:780px;margin:0 0 22px}
+.lede a{text-decoration:underline}
+.meta{display:flex;flex-wrap:wrap;gap:6px 28px;font-size:14.5px;color:var(--muted);margin-bottom:22px}
+.meta b{color:var(--ink);font-weight:600}
+.counts{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:28px}
+.count{display:inline-flex;align-items:baseline;gap:8px;border-radius:999px;padding:7px 18px;font:600 15px var(--sans)}
+.count b{font:700 22px var(--head)}
+.count.crit{background:var(--crit-bg);color:var(--crit)} .count.high{background:var(--high-bg);color:var(--high)}
+.count.med{background:var(--med-bg);color:var(--med)}  .count.low{background:var(--low-bg);color:var(--low)}
+hr.rule{border:0;border-top:1px solid var(--line);margin:0 0 40px}
+
+/* ===== Sections ===== */
+.section-title{font-size:28px;font-weight:800;margin:0 0 8px}
+.section-sub{color:var(--muted);font-size:17px;max-width:760px;margin:0 0 22px}
+
+/* ===== Severity pill ===== */
+.pill{display:inline-block;border-radius:999px;padding:2px 11px;font:600 13.5px/1.5 var(--sans);vertical-align:middle;white-space:nowrap}
+.pill.crit{background:var(--crit-bg);color:var(--crit)} .pill.high{background:var(--high-bg);color:var(--high)}
+.pill.med{background:var(--med-bg);color:var(--med)}  .pill.low{background:var(--low-bg);color:var(--low)}
+
+/* ===== Tables ===== */
+.table{width:100%;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--card);border-collapse:separate;border-spacing:0;margin-bottom:44px}
+.table th{background:var(--bg);text-align:left;font:600 12.5px var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:13px 18px;border-bottom:1px solid var(--line)}
+.table td{padding:14px 18px;border-bottom:1px solid var(--line);vertical-align:top;font-size:16px}
+.table tr:last-child td{border-bottom:0}
+.table td.id{font:500 13px var(--mono);color:var(--muted);width:70px;padding-top:17px}
+.table td.sev{width:150px} .table td.where{width:260px;color:var(--ink)}
+.table.data{margin:16px 0 18px;border-radius:12px} .table.data td{font-size:15px}
+
+/* ===== Issue card ===== */
+.issue{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:28px 30px 30px;margin-bottom:26px;break-inside:auto}
+.issue-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+.issue-id{font:500 15px var(--mono);color:var(--muted);min-width:34px}
+.issue-title{font-size:24px;font-weight:700;line-height:1.3}
+.issue-head .pill{transform:translateY(-3px)}
+.loc{font-size:14.5px;color:var(--muted);margin:6px 0 16px 48px}
+.issue p,.issue ul,.issue ol{max-width:800px}
+.issue p{margin:0 0 14px}
+.issue ul{padding-left:22px;margin:0 0 16px} .issue li{margin-bottom:6px}
+.note{font-size:14.5px;color:var(--muted);max-width:640px;margin:10px 0 16px}
+
+/* ===== Before / After ===== */
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:16px 0}
+.pair.stack{grid-template-columns:1fr}
+.pair.phones{grid-template-columns:330px 330px;justify-content:start}
+.box{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--code-bg);display:flex;flex-direction:column}
+.box-label{font:600 13px var(--sans);letter-spacing:.1em;text-transform:uppercase;padding:9px 15px;border-bottom:1px solid var(--line)}
+.box.before .box-label{background:var(--crit-bg);color:var(--crit)}
+.box.after .box-label{background:var(--good-bg);color:var(--good)}
+.box pre{font-variant-ligatures:none;margin:0;padding:16px 18px;font:400 13px/1.75 var(--mono);color:var(--ink);white-space:pre-wrap;word-break:break-word;flex:1}
+.box pre .del{background:var(--del-bg);color:var(--crit)}
+.box pre .add{background:var(--add-bg);color:var(--good)}
+.box pre .cm{color:var(--muted)}
+.box.shot{background:var(--card)}
+.box.shot img{display:block;width:100%;height:auto}
+.box .cap{font-size:14px;color:var(--muted);padding:10px 15px;border-top:1px solid var(--line);background:var(--card)}
+
+/* ===== Outline (heading issues) ===== */
+.outline{font:400 13px/1.9 var(--mono)}
+.outline .h1{padding-left:0} .outline .h2{padding-left:2ch} .outline .h3{padding-left:4ch} .outline .h4,.outline .h5,.outline .h6,.outline .p{padding-left:6ch}
+.outline .bad{color:var(--crit)} .outline .why{color:var(--crit);opacity:.85}
+
+/* ===== Metric tiles ===== */
+.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:18px 0 8px}
+.metric{border:1px solid var(--line);border-radius:12px;background:var(--bg);padding:12px 16px}
+.metric .k{font-size:14px;color:var(--muted)}
+.metric .v{font:800 28px/1.2 var(--head)}
+.metric .v.bad{color:var(--crit)} .metric .v.mid{color:var(--high)} .metric .v.ok{color:var(--good)}
+
+/* ===== Fix box ===== */
+.fix{background:var(--fix-bg);border-left:5px solid var(--fix-bar);border-radius:0 12px 12px 0;padding:16px 22px;max-width:800px;margin-top:16px}
+.fix p{margin:0} .fix b.lead,.fix .fix-title{color:var(--good);font-weight:700}
+.fix .fix-title{display:block;font-size:17px;margin-bottom:6px}
+.fix ol{margin:4px 0 0;padding-left:22px} .fix li{margin-bottom:4px}
+
+/* ===== Checklist ===== */
+.check{display:flex;align-items:center;gap:16px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 20px;margin-bottom:10px}
+.check .cb{width:19px;height:19px;border:2px solid var(--muted);border-radius:4px;flex:none}
+.check .txt{flex:1}
+.check .ref{font:500 13px var(--mono);color:var(--muted);align-self:flex-start}
+
+/* ===== Footer ===== */
+.foot{border-top:1px solid var(--line);margin-top:48px;padding-top:22px;font-size:14px;color:var(--muted)}
+
+
+/* ===== Scorecard ===== */
+.metrics.four{grid-template-columns:repeat(4,1fr);margin-top:0}
+.cats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0 44px}
+.cat{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 16px}
+.cat .k{font:700 15.5px var(--head);color:var(--ink);margin-bottom:6px}
+.cat .n{display:flex;gap:6px;flex-wrap:wrap;font:600 13px var(--sans)}
+.cat .n span{border-radius:999px;padding:1px 9px}
+.n .f{background:var(--crit-bg);color:var(--crit)} .n .w{background:var(--high-bg);color:var(--high)} .n .p{background:var(--good-bg);color:var(--good)}
+
+/* ===== Passing checks ===== */
+.passes{columns:2;column-gap:32px;margin:0;padding:0;list-style:none}
+.passes li{break-inside:avoid;padding:7px 0 7px 26px;position:relative;font-size:15.5px;border-bottom:1px solid var(--line-soft)}
+.passes li:before{content:"\2713";position:absolute;left:4px;color:var(--good);font-weight:700}
+.passes .pc{font:600 11.5px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-right:6px}
+
+@media (max-width:760px){
+  .wrap{padding:28px 16px}.title{font-size:32px}.pair,.pair.phones{grid-template-columns:1fr}
+  .metrics,.metrics.four,.cats{grid-template-columns:repeat(2,1fr)}.passes{columns:1}.loc{margin-left:0}.table td.where{width:auto}
+}
+@media print{ .issue{break-inside:auto} a{color:inherit} }

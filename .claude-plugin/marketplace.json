@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-skills",
+  "owner": { "name": "Shakhawat", "url": "https://github.com/ishakhawat" },
+  "metadata": { "description": "Claude Code skills by Shakhawat." },
+  "plugins": [
+    {
+      "name": "seo-audit",
+      "source": "./plugins/seo-audit",
+      "description": "Developer-ready SEO audit of any web page (WordPress, Shopify, Laravel/Inertia, Vue, Next.js, Webflow, Wix and more) as a designed HTML report and one-page PDF: numbered issues with severity, live before/after HTML, desktop and mobile screenshots, Lighthouse metrics, 60+ automated checks and a fix checklist.",
+      "author": { "name": "Shakhawat", "url": "https://github.com/ishakhawat" },
+      "category": "marketing",
+      "keywords": ["seo", "seo-audit", "technical-seo", "lighthouse", "core-web-vitals", "pdf-report", "wordpress", "shopify", "laravel", "inertia", "vue", "nextjs"]
+    }
+  ]
+}
