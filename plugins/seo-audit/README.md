@@ -2,7 +2,7 @@
 
 An SEO audit of one live page that a developer can act on. You give Claude a URL; it collects evidence from the live page, decides what matters, and produces:
 
-- **`report.html`** and **`<Site> <Page> - SEO Audit.pdf`**: one long page with numbered issues (Critical / High / Medium / Low). Each issue has the exact location, live HTML before and after, desktop and 390 px mobile screenshots with "after" mockups, Lighthouse tiles, and a Fix box written in the platform's own settings language.
+- **`report.html`** and **`<Site> <Page> - SEO Audit.pdf`**: one long page with numbered issues (Critical / High / Medium / Low). Every issue has the exact location, a picture (a before/after screenshot of the element with an "after" mockup, a Google result preview, or a filmstrip of the page loading on a throttled phone, recorded again with the fix applied when the fix is CSS), live HTML before and after, a step-by-step Fix box in the platform's own settings language, and an "After the fix" box with the numbers now and after and how to check the fix worked.
 - A **scorecard** of 60+ automated checks across indexing, meta and social, content and headings, images and media, links, structured data, performance, mobile UX, accessibility, security and AI search.
 - **PageSpeed report**: Google PageSpeed Insights mobile and desktop scores and lab metrics, real-user Core Web Vitals from the Chrome UX Report, and **TTFB** split into DNS, connect, TLS and server wait, with cached vs uncached timing and cache/CDN headers.
 - **Road to 100**: every Lighthouse check that keeps Performance, Accessibility, Best practices or SEO below 100, with the files or elements causing it on this page and how to fix it, ranked by impact.
@@ -39,7 +39,7 @@ Nothing is skipped; the work runs in parallel:
 | Step | Time |
 |---|---|
 | Setup (first run only) | about 20 s |
-| Evidence: TTFB, then raw HTML + link check + sitemap, Google PageSpeed, and a desktop + mobile Chrome session in parallel, then Lighthouse mobile | 40–60 s |
+| Evidence: TTFB, then raw HTML + link check + sitemap, Google PageSpeed, and a desktop + mobile Chrome session in parallel, then Lighthouse mobile (if PageSpeed didn't run) and a recorded slow-4G load | 50–75 s |
 | Desktop Lighthouse (when PageSpeed has no desktop result) | in the background while Claude reads the evidence |
 | Issues: 2–3 `issue-writer` agents write them in parallel while Claude takes the before/after screenshots | 1–2 min |
 | Build: re-verify the page (in parallel), HTML, PDF and an automatic layout check | 10–20 s |

@@ -16,7 +16,7 @@ You write part of an SEO audit report. The lead auditor has already collected th
 
 ## How to work
 
-1. Read `references/report-json.md` in the seo-audit skill folder (path in your prompt) for the issue format and evidence blocks, and the relevant rows of `references/issue-catalog.md` for wording and platform fix locations.
+1. Read `references/report-json.md` in the seo-audit skill folder (path in your prompt) for the issue format, `capture`, `result` and evidence blocks, and the relevant rows of `references/issue-catalog.md` for wording and platform fix locations.
 2. Read only what your issues need: the matching lines of `data/summary.md`, and `data/collect.json`, `data/rendered.json` or `data/lighthouse.json` when you need exact markup or numbers. For live markup you can `curl -s <url>` and grep it; trim it with `...`.
 3. Write each issue as one JSON object in its own file. Use `key` from the brief so other issues can reference it with `{{ref:key}}`.
 
@@ -25,8 +25,10 @@ You write part of an SEO audit report. The lead auditor has already collected th
 - `title`: a plain statement with the number that matters ("A 12 MB intro video with no poster is the mobile LCP, at 7.9 seconds"). `short`: the table version.
 - `severity` exactly as briefed. `where`: section or tool. `loc`: exact locator, setting path or file (with line numbers if you have the code).
 - `body`: 2–4 sentences — what is wrong, why it matters to Google or visitors, likely cause. Define jargon once.
-- `blocks`: real evidence only — `code` before/after with `[-removed-]` and `{+added+}`, `table`, `metrics`, `outline`, or a `shot`/`shots` block using existing files in `shots/` (the lead takes any new screenshots; use the file names given in the brief).
-- `fix`: the exact setting, field or file in the platform's own words; Best and Quick fix when both exist; proposed copy in quotes.
+- A picture, always: `capture` (selector from the brief or `summary.md`, `width` 1440 or 390, and `after_js` that applies the proposed fix in the browser for the "After · Proposed" shot), a `serp` block for head-tag issues, or a `filmstrip` block for speed issues. The build takes the `capture` shots; don't run a browser yourself. Check a selector exists with `grep` on `data/rendered.json` or `data/sections.json` before using it. Keep `after_js` honest: change only what the fix proposes.
+- `blocks`: real evidence only — `code` before/after with `[-removed-]` and `{+added+}`, `table`, `metrics`, `outline`, `serp`, `filmstrip`, or a `shot`/`shots` block using existing files in `shots/`.
+- `fix`: `{"title": "Fix", "steps": [...]}` with the exact file, setting or field and the new value in each step, the code or copy to paste, and a Best and a Quick fix when both exist.
+- `result`: what changes for Google and visitors after the fix, `metrics` rows `[measure, now, after]` (mark estimates with "about"), and `verify`, how to check it worked.
 - `check`: a short imperative for the checklist.
 
 ## Rules

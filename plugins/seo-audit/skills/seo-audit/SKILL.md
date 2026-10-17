@@ -7,7 +7,7 @@ description: Full SEO audit of one live web page on any platform (WordPress, Ele
 
 Produces a developer-ready audit of one page: a long single-page PDF plus the HTML it was printed from. Every issue says where the problem is (element locator, setting path, file) and how to fix it, with evidence from the live page next to the proposed fix.
 
-Speed matters, and nothing is skipped to get it: the scripts collect everything in one parallel run (about 45–60 s) while the desktop Lighthouse run finishes in the background, writer agents write the issues in parallel while you take screenshots, and the build re-verifies the page and checks its own layout. Your time goes into judgment, not plumbing. Don't open the large JSON files unless `summary.md` leaves a question open.
+Speed matters, and nothing is skipped to get it: the scripts collect everything in one parallel run (about 60 s, including a recorded slow-4G load) while the desktop Lighthouse run finishes in the background, writer agents write the issues in parallel while you take screenshots, and the build re-verifies the page and checks its own layout. Your time goes into judgment, not plumbing. Don't open the large JSON files unless `summary.md` leaves a question open.
 
 `$SKILL` below means this skill's base directory (shown when the skill loads).
 
@@ -41,7 +41,7 @@ When PageSpeed has no desktop result, the local desktop Lighthouse run continues
 
 ## Step 3: Read the page
 
-Read `data/summary.md` in full. It has the platform, the scores, every failed or warning check with details, the heading outline with locators, the rendered page section by section, TTFB, PageSpeed mobile and desktop scores, real-user data, and the "Road to 100" list (every failing Lighthouse audit with the files or elements behind it). Then look at `shots/mobile-top.png` and `shots/desktop-top.png`.
+Read `data/summary.md` in full. It has the platform, the scores, every failed or warning check with details, the heading outline with locators, the rendered page section by section, TTFB, PageSpeed mobile and desktop scores, real-user data, and the "Road to 100" list (every failing Lighthouse audit with the files or elements behind it). Then look at `shots/mobile-top.png`, `shots/desktop-top.png` and `shots/filmstrip-mobile.png`: one frame per second of a real load on a throttled phone (slow 4G, 4× slower CPU). The filmstrip shows what no check catches: a page that stays blank because content is hidden until JavaScript runs, a late font swap, a pop-up covering the headline, or a layout jump.
 
 Read the section text like a visitor would. The checks find markup problems, but the most valuable findings usually come from reading: copy left over from another page or audience, an Inertia/Vue/React page whose text and head tags only exist after JavaScript (no SSR), a card that repeats another card's text, a photo of the wrong product, a counter that renders "0+" in the HTML, or a broken sentence. If a section looks suspicious, screenshot it (Step 5) to confirm.
 
@@ -60,30 +60,28 @@ Turn the checks and your reading into **8–16 issues**. Merge related findings 
 
 Write titles as plain statements with the number that matters: "Hero image is lazy-loaded, giving a 22-second LCP on mobile", not "LCP optimisation".
 
-## Step 5: Brief the writers, then take screenshots while they write
+## Step 5: Brief the writers, then write your own issues
 
 Writing the issues is the slowest part, so it runs in parallel. Before anything else, write `<out>/report.json` with the top-level fields only (`site`, `page`, `footer_extra`, `road_notes`, `"issues": []`), then split the issues into 2–3 groups of 3–5 and start one `seo-audit:issue-writer` agent per group **in a single message** (Agent tool, `subagent_type: "seo-audit:issue-writer"`, in the background). Give each writer:
 
 - `<out>` and the skill path `$SKILL` (for `references/report-json.md` and `references/issue-catalog.md`);
-- for each issue: the file to write (`<out>/issues/<NN>-<key>.json`, numbered in severity order), the `key`, severity, title idea, the exact evidence (check IDs, locators, numbers, file paths and line numbers you found, markup to quote), the fix direction, and the screenshot file names it should reference;
+- for each issue: the file to write (`<out>/issues/<NN>-<key>.json`, numbered in severity order), the `key`, severity, title idea, the exact evidence (check IDs, locators, numbers, file paths and line numbers you found, markup to quote), the fix direction, and which picture to use (below) with the selector;
 - the project folder, if the site's code is open.
 
-A good brief is a few precise lines per issue; the writer turns it into body, evidence blocks and a fix. Keep the 1–3 issues that need the most judgment (the ones based on reading the page or the code) for yourself and write them into `report.json` while the writers work.
+A good brief is a few precise lines per issue; the writer turns it into body, evidence, a full fix and the result. Keep the 1–3 issues that need the most judgment (the ones based on reading the page or the code) for yourself and write them into `report.json` while the writers work.
 
-**Screenshots, at the same time.** Only for issues where a picture helps (layout, pop-ups, wrong images, missing sections). Write `<out>/shots.json` and take them all in one browser session:
+**Every issue gets a picture, a full fix and a result.** The reader should see the problem, know exactly what to change, and know what will be different afterwards:
 
-```json
-[{"out": "shots/b3-before.png", "width": 390},
- {"out": "shots/b3-after.png", "width": 390, "js": "document.querySelector('#popup')?.remove()"},
- {"out": "shots/b5-before.png", "selector": "[data-id=\"fc9f1de\"]"},
- {"out": "shots/b5-after.png", "selector": "[data-id=\"fc9f1de\"]", "inject": "data/b5-after.js"}]
-```
+| Issue kind | Picture |
+|---|---|
+| Something visible on the page (layout, images, headings, buttons, pop-ups, copy, video) | `capture` with the element's selector from `summary.md`, and `after_js` that applies the proposed fix in the browser as an "After · Proposed (mockup)" shot |
+| Title, description, canonical, indexing, currency or other head tags | `serp` block: Google result today and after the fix |
+| Speed: LCP, render-blocking, TTFB, heavy scripts, caching, content hidden until JavaScript | `filmstrip` block (the recorded load) plus `metrics`; when the fix is CSS (unhide content, `font-display`), add `after.css` so the build records the load again with the fix applied; add a `capture` of the slow element when there is one |
+| Markup only (schema, link attributes, alt text) | `capture` of the affected section, with the code pair below it |
 
-```bash
-node "$SKILL/scripts/browser.mjs" shots <URL> <out>/shots.json
-```
+Keep mockups honest: `after_js` shows only what the Fix box proposes. Hide pop-ups and chat bubbles that get in the way with `capture.hide` (the overlay locators are in `summary.md`). Every `fix` names the exact file, setting or field and the new value, as numbered steps, with a Best and a Quick fix when both exist. Every `result` says what changes for Google and visitors, gives the numbers before and after in its `metrics` rows (marked "about" when estimated, e.g. from Lighthouse savings), and says how to check the fix worked.
 
-`js` or `inject` edits the page in the local browser before the shot, which is how you make an "After · Proposed" mockup. Keep mockups honest: show only what the Fix box proposes. If a pop-up, cookie bar or chat bubble gets in the way of a shot that is not about it, add `"hide": "#popup-id, .cookie-bar"` (the overlay locators are in `summary.md`). Use the locators from `summary.md` as selectors. `shots/mobile-top.png` and `shots/desktop-top.png` already exist, so reuse them as "before" shots where they fit. Decide the shot file names before briefing the writers so they can reference them.
+The build takes all `capture` screenshots itself, in one browser session. For a shot that `capture` can't describe (several steps, a scrolled pop-up), write `<out>/shots.json` and run `node "$SKILL/scripts/browser.mjs" shots <URL> <out>/shots.json` while the writers work, then reference the files in a `shots` block.
 
 For a page with few issues (under 6), skip the writers and write everything yourself; starting agents costs more than it saves.
 
@@ -94,6 +92,7 @@ Each issue has `title`, `short`, `severity`, `where`, `loc`, `body`, optional ev
 2. **body**: 2–4 sentences covering what is wrong, why it matters to Google or visitors, and how it probably happened. Define jargon once, in passing.
 3. **blocks**: real evidence. Show the live markup trimmed with `...` against the corrected markup, or screenshots, or metric tiles, or a table.
 4. **fix**: name the exact setting, field or file, in the platform's own words. Give a Best fix and a Quick fix when both exist, and put any proposed copy in quotes.
+5. **picture and result**: a `capture`, `serp` or `filmstrip` (Step 5), and a `result` box saying what changes after the fix and how to check it.
 
 When the writers report back, skim their files for invented facts or wrong severities (a quick read, not a rewrite), then build:
 
@@ -103,7 +102,7 @@ node "$SKILL/scripts/build.mjs" <out>
 
 It merges `report.json` with `issues/*.json`, waits for the background desktop run, re-fetches the page (in parallel) to confirm it hasn't changed, writes `report.html` and `<Site> <Page> - SEO Audit.pdf`, checks the layout, and opens the PDF in the user's default viewer (`--no-open` skips that when rebuilding). The severity counts, IDs, scorecard, Lighthouse tiles, PageSpeed and TTFB section, Road to 100, checklist, passing checks and footer are generated for you.
 
-Read the build output instead of screenshotting the PDF: lines starting with `LAYOUT:` name clipped code blocks, over-wide tables or missing screenshots; fix those in the issue file and rebuild with `--no-open --no-reverify`. If it warns that the page changed, re-check the affected issues and rebuild.
+Read the build output instead of screenshotting the PDF: lines starting with `LAYOUT:` name clipped code blocks, over-wide tables, missing screenshots and issues without a picture or result, and `CAPTURE:` lines name screenshots that failed (usually a selector that doesn't match); fix those in the issue file and rebuild with `--no-open --no-reverify`. If it warns that the page changed, re-check the affected issues and rebuild.
 
 ## Step 7: Hand it over
 

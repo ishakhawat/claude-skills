@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 // Render <out-dir>/report.json into report.html and a one-page PDF.
 //
-//   node build.mjs <out-dir> [--no-pdf] [--no-reverify] [--no-open]
+//   node build.mjs <out-dir> [--no-pdf] [--no-reverify] [--no-open] [--reshoot]
 //
+// Issues with a "capture" get their screenshots taken here, in one Chrome
+// session while the page is re-verified: shots/<key>-before.png, plus
+// shots/<key>-after.png when capture.after_js / after_inject builds the fix
+// mockup. Existing files are kept unless --reshoot.
 // Opens the PDF (or the HTML with --no-pdf) in the system viewer when done,
 // unless --no-open or SEO_AUDIT_NO_OPEN=1.
 //
@@ -20,7 +24,7 @@ import { CATEGORIES, THRESHOLDS, grade, lhMetrics } from "./checks.mjs";
 
 const [, , dirArg, ...rest] = process.argv;
 if (!dirArg || dirArg === "--help") {
-  console.log(readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1, 13).map(l => l.replace(/^\/\/ ?/, "")).join("\n"));
+  console.log(readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1, 18).map(l => l.replace(/^\/\/ ?/, "")).join("\n"));
   process.exit(1);
 }
 const dir = existsSync(join(resolve(dirArg), "report.json")) ? resolve(dirArg) : resolveOut(dirArg);
@@ -43,6 +47,38 @@ const C0 = read("data/collect.json") || {};
 const reverifyJob = R.reverified || rest.includes("--no-reverify") || !C0.url ? Promise.resolve(null) : new Promise(res =>
   execFile(py, ["-I", join(HERE, "collect.py"), C0.url, join(dir, "data", "collect-reverify.json"), "--no-linkcheck"], { timeout: 90000 },
     err => res(err ? { error: err.message.split("\n")[0] } : JSON.parse(readFileSync(join(dir, "data", "collect-reverify.json"), "utf8")))));
+// Per-issue screenshots (issue.capture), all in one browser.mjs run.
+const capList = [];
+for (const [i, x] of (R.issues || []).entries()) {
+  const c = x.capture; if (!c) continue;
+  const k = (x.key || "issue" + (i + 1)).replace(/[^\w-]/g, "");
+  const base = { selector: c.selector, width: c.width || 1440, height: c.height, hide: c.hide, scroll: c.scroll, full: c.full, wait: c.wait };
+  x._cap = { before: `shots/${k}-before.png`, after: c.after_js || c.after_inject ? `shots/${k}-after.png` : null, width: base.width, c };
+  const need = f => rest.includes("--reshoot") || !existsSync(join(dir, f));
+  if (need(x._cap.before)) capList.push({ ...base, js: c.js, out: x._cap.before });
+  if (x._cap.after && need(x._cap.after)) capList.push({ ...base, js: [c.js, c.after_js].filter(Boolean).join(";\n"), inject: c.after_inject, out: x._cap.after });
+}
+const capJob = !capList.length || !(C0.final_url || C0.url) ? Promise.resolve("") : new Promise(res => {
+  writeFileSync(join(dir, ".capture.json"), JSON.stringify(capList, null, 1));
+  console.log(`taking ${capList.length} issue screenshots...`);
+  execFile(process.execPath, [join(HERE, "browser.mjs"), "shots", C0.final_url || C0.url, join(dir, ".capture.json")], { timeout: 300000 },
+    (err, out, errOut) => res(errOut || (err ? err.message : "")));
+});
+// Filmstrips: one real throttled load per source used by a filmstrip block (browser.mjs filmstrip),
+// plus an "after" load per block with after.css (the fix's CSS applied in the browser).
+const fsNeed = new Map();
+for (const [i, x] of (R.issues || []).entries()) for (const b of x.blocks || []) if (b.type === "filmstrip") {
+  const src = b.source === "desktop" ? "desktop" : "mobile";
+  fsNeed.set(`filmstrip-${src}.json`, { src });
+  if (b.after?.css) { b._after = `filmstrip-${src}-after-${(x.key || "issue" + (i + 1)).replace(/[^\w-]/g, "")}.json`; fsNeed.set(b._after, { src, css: b.after.css }); }
+}
+const fsTodo = [...fsNeed].filter(([f]) => rest.includes("--reshoot") || !existsSync(join(dir, "data", f)));
+const fsJob = Promise.all(fsTodo.map(([f, { src, css }]) => !(C0.final_url || C0.url) ? "" : new Promise(res => {
+  const args = [join(HERE, "browser.mjs"), "filmstrip", C0.final_url || C0.url, join(dir, "data", f), "--width", src === "desktop" ? "1440" : "390"];
+  if (css) { writeFileSync(join(dir, "data", f.replace(/\.json$/, ".css")), css); args.push("--css", join(dir, "data", f.replace(/\.json$/, ".css"))); }
+  execFile(process.execPath, args, { timeout: 120000 }, (err, out) => { if (err) console.warn(`LAYOUT: ${f} failed (${err.message.split("\n")[0]})`); else process.stdout.write(out); res(); });
+})));
+if (fsTodo.length) console.log(`recording ${fsTodo.length} filmstrip load(s) on throttled slow 4G...`);
 const pending = join(dir, "data", "desktop.pending");
 if (existsSync(pending)) {
   console.log("waiting for the background desktop Lighthouse run...");
@@ -50,6 +86,9 @@ if (existsSync(pending)) {
   if (existsSync(pending)) console.warn("desktop Lighthouse still running after 4 min; building without it");
 }
 const reverifyResult = await reverifyJob;
+await fsJob;
+const capErrors = (await capJob).split("\n").filter(l => /\.png: /.test(l));
+for (const l of capErrors) console.warn("CAPTURE: " + l.replace(dir + "/", ""));
 
 const C = read("data/collect.json") || {}, LH = read("data/lighthouse.json"), CK = read("data/checks.json");
 const TT = read("data/ttfb.json"), PS = read("data/pagespeed.json"), ROAD = read("data/road-to-100.json");
@@ -100,6 +139,16 @@ function shotBox(s, cls, label) {
   return `<a class="box shot ${cls}" href="${esc(s.src)}"><div class="box-label">${esc(s.label || label)}</div><img src="${esc(s.src)}" alt="${esc(s.alt || s.cap || "")}">${s.cap ? `<div class="cap">${refs(s.cap)}</div>` : ""}</a>`;
 }
 
+function serpBox(r, cls, label) {
+  let host = r.url || "", crumbs = "";
+  try { const u = new URL(r.url); host = u.hostname.replace(/^www\./, ""); crumbs = u.pathname.split("/").filter(Boolean).join(" › "); } catch {}
+  const tl = String(r.title || "").length, dl = String(r.desc || "").length;
+  return `<div class="box ${cls} serp-box"><div class="box-label">${esc(label)}</div><div class="serp">
+<div class="serp-site"><span class="serp-fav">${esc((r.site || host).slice(0, 1).toUpperCase())}</span><span><b>${esc(r.site || host)}</b><br><span class="serp-url">https://${esc(host)}${crumbs ? " › " + esc(crumbs) : ""}</span></span></div>
+<div class="serp-title">${esc(r.title || "(no title)")}</div><div class="serp-desc">${esc(r.desc || "(no meta description: Google picks text from the page)")}</div></div>
+<div class="cap">Title ${tl} characters${tl > 60 ? " (Google cuts titles at about 600 px, roughly 60 characters)" : ""} · description ${dl} characters${dl > 160 ? " (cut at about 160)" : ""}</div></div>`;
+}
+
 function block(b) {
   switch (b.type) {
     case "code": return `<div class="pair${b.stack ? " stack" : ""}">
@@ -122,6 +171,42 @@ function block(b) {
       return `<div class="pair"><div class="box before"><div class="box-label">Before · Live outline</div><pre class="outline">${o(b.before)}</pre></div>
       <div class="box after"><div class="box-label">After</div><pre class="outline">${o(b.after)}</pre></div></div>`;
     }
+    case "serp": {
+      // Google result preview. "before" defaults to the live title, description and URL.
+      const m = C.meta || {};
+      const live = { title: m.title, desc: m.description, url: C.final_url, site: m.og?.["og:site_name"] };
+      const before = { ...live, ...(b.before || {}) }, after = b.after ? { ...live, ...b.after } : null;
+      return `<div class="pair stack">${serpBox(before, "before", b.before_label || "Before · Google result today")}${after ? serpBox(after, "after", b.after_label || "After · Proposed") : ""}</div>`;
+    }
+    case "filmstrip": {
+      // A real recorded load on throttled slow 4G (data/filmstrip-<source>.json, recorded by this build),
+      // or, if that failed, Lighthouse's thumbnails (recorded unthrottled, so their times differ from its metrics).
+      const src = b.source === "desktop" ? "desktop" : "mobile";
+      const strip = (rec, cls, label, lead) => {
+        const { fcp, lcp } = rec, all = rec.frames, at = t => all.find(f => f.t >= t) || all.at(-1);
+        const span = Math.max(lcp, fcp) || all.at(-1).t;
+        const targets = [all[0].t, ...[0, .25, .5, .75].map(k => fcp + (span - fcp) * k), lcp, all.at(-1).t];
+        const frames = [...new Set([all.filter(f => f.t < fcp).at(-1), ...targets.map(at)].filter(Boolean))].sort((a, b) => a.t - b.t).slice(0, 10);
+        const lcpIdx = frames.findIndex(f => f.t >= lcp);
+        return `<div class="box ${cls} film-box"><div class="box-label">${esc(label)}</div><div class="film">${frames.map((f, i) =>
+          `<figure class="${i === lcpIdx ? "lcp" : f.t < fcp ? "blank" : ""}"><img src="${f.src}" alt=""><figcaption>${(f.t / 1000).toFixed(1)} s${i === lcpIdx ? " · LCP" : ""}</figcaption></figure>`).join("")}</div>
+<div class="cap">${lead}First content at ${(fcp / 1000).toFixed(1)} s; the largest content${rec.lcp_element ? ` (<code>${esc(rec.lcp_element)}</code>)` : ""} at ${(lcp / 1000).toFixed(1)} s, outlined in red. Page fully loaded at ${(rec.load / 1000).toFixed(1)} s.</div></div>`;
+      };
+      const rec = read(`data/filmstrip-${src}.json`), after = b._after && read(`data/${b._after}`);
+      if (rec?.frames?.length) {
+        const dev = src === "desktop" ? "a desktop" : "a phone";
+        return strip(rec, "before", b.label || `Before · Page loading on ${dev}, slow 4G`,
+          `${b.cap ? refs(b.cap) + " " : ""}One recorded load on ${dev} with throttled slow 4G (150 ms latency, 1.6 Mbps) and a 4× slower CPU, like Lighthouse ${src}; times vary a little from run to run. `) +
+          (after?.frames?.length ? strip(after, "after", b.after.label || "After · Same load with the fix applied in the browser",
+            `${b.after.cap ? refs(b.after.cap) + " " : ""}Recorded the same way, with the fix's CSS injected before the page loads; nothing was changed on the website. `) : "");
+      }
+      const lh = src === "desktop" ? read("data/lighthouse-desktop.json") : LH;
+      const items = lh?.audits?.["screenshot-thumbnails"]?.details?.items || [];
+      if (!items.length) { console.warn("LAYOUT: filmstrip has no frames"); return ""; }
+      return `<div class="box before film-box"><div class="box-label">${esc(b.label || "Before · Page loading, Lighthouse frames")}</div><div class="film">${items.map(t =>
+        `<figure><img src="${t.data}" alt=""><figcaption>${(t.timing / 1000).toFixed(1)} s</figcaption></figure>`).join("")}</div>
+<div class="cap">${b.cap ? refs(b.cap) + " " : ""}Frames from Lighthouse's own recording, which loads the page without throttling; its slow-4G metrics are simulated from that load, so these frame times are not the metric times.</div></div>`;
+    }
     case "note": return `<p class="note">${refs(b.html)}</p>`;
     case "html": return refs(b.html);
     default: console.error("unknown block type " + b.type); return "";
@@ -134,14 +219,38 @@ function fixBox(f) {
   if (typeof f === "string") return `<div class="fix"><p><b class="lead">Fix.</b> ${refs(f)}</p></div>`;
   return `<div class="fix"><span class="fix-title">${esc(f.title || "Fix")}</span>${f.steps ? `<ol>${f.steps.map(s => `<li>${refs(s)}</li>`).join("")}</ol>` : ""}${f.html ? refs(f.html) : ""}</div>`;
 }
+// "After the fix": what changes for Google and visitors, expected numbers, how to check.
+function resultBox(r) {
+  if (!r) return "";
+  if (typeof r === "string") r = { html: r };
+  const rows = r.metrics || [];
+  return `<div class="result"><span class="result-title">${esc(r.title || "After the fix")}</span>${para(r.html)}${rows.length ? `<table class="table data result-table"><thead><tr><th>${esc(r.head?.[0] || "Measure")}</th><th>${esc(r.head?.[1] || "Now")}</th><th>${esc(r.head?.[2] || "After the fix")}</th></tr></thead><tbody>${
+    rows.map(([k, a, b]) => `<tr><td>${refs(k)}</td><td class="bad">${refs(a)}</td><td class="ok">${refs(b)}</td></tr>`).join("")}</tbody></table>` : ""}${r.verify ? `<p class="verify"><b>How to check:</b> ${refs(r.verify)}</p>` : ""}</div>`;
+}
+// Screenshots taken by this build from issue.capture.
+function captureBlock(x) {
+  const k = x._cap; if (!k || !existsSync(join(dir, k.before))) return "";
+  const c = k.c, phone = k.width < 768;
+  if (!k.after || !existsSync(join(dir, k.after)))
+    return block({ type: "shot", src: k.before, width: k.width, label: c.label || (phone ? "Live, 390 px" : "Live, desktop"), cap: c.before_cap || c.cap });
+  return block({ type: "shots", width: k.width, before: { src: k.before, cap: c.before_cap, label: c.before_label }, after: { src: k.after, cap: c.after_cap, label: c.after_label || "After · Proposed (mockup)" } });
+}
+const VISUAL = new Set(["shot", "shots", "serp", "filmstrip"]);
 const issueHtml = x => `<section class="issue" id="${x.id.toLowerCase()}">
   <div class="issue-head"><span class="issue-id">${x.id}</span><h3 class="issue-title">${esc(refs(x.title))}</h3><span class="pill ${SEV[x.severity]}">${x.severity}</span></div>
   ${x.loc ? `<div class="loc">${refs(x.loc)}</div>` : ""}
   ${para(x.body)}
+  ${captureBlock(x)}
   ${(x.blocks || []).map(block).join("\n")}
   ${para(x.after_body)}
   ${fixBox(x.fix)}
+  ${resultBox(x.result)}
 </section>`;
+for (const x of issues) {
+  const hasShot = (x._cap && existsSync(join(dir, x._cap.before))) || (x.blocks || []).some(b => VISUAL.has(b.type));
+  if (!hasShot) console.warn(`LAYOUT: ${x.id} (${x.key || x.short || x.title}) has no screenshot, Google preview or filmstrip`);
+  if (!x.result) console.warn(`LAYOUT: ${x.id} (${x.key || x.short || x.title}) has no "After the fix" result`);
+}
 
 // ---------- re-verify ----------
 let reverified = R.reverified || "";
@@ -326,7 +435,7 @@ if (!rest.includes("--no-pdf")) {
     if (!problems.length) console.log("layout check: no clipped code, wide tables or missing images");
     const maxPx = 19000; // Chrome's single-page limit is about 200 inches
     // Taller reports are scaled down to stay one page (vector text stays sharp); very tall ones are split.
-    const scale = h <= maxPx ? 1 : maxPx / (h + 2) >= 0.55 ? Math.floor(maxPx / (h + 2) * 1000) / 1000 : 1;
+    const scale = h <= maxPx ? 1 : maxPx / (h + 2) >= 0.4 ? Math.floor(maxPx / (h + 2) * 1000) / 1000 : 1;
     await page.pdf({ path: join(dir, name), width: Math.floor(1120 * scale) + "px", height: Math.min(Math.ceil((h + 2) * scale), maxPx) + "px", scale,
       printBackground: true, margin: { top: 0, right: 0, bottom: 0, left: 0 } });
     opened = join(dir, name);

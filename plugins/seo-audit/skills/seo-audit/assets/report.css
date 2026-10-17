@@ -76,7 +76,7 @@ hr.rule{border:0;border-top:1px solid var(--line);margin:0 0 40px}
 .box pre .add{background:var(--add-bg);color:var(--good)}
 .box pre .cm{color:var(--muted)}
 .box.shot{background:var(--card)}
-.box.shot img{display:block;width:100%;height:auto}
+.box.shot img{display:block;width:auto;max-width:100%;height:auto;align-self:center} /* never upscale a small element shot */
 .box .cap{font-size:14px;color:var(--muted);padding:10px 15px;border-top:1px solid var(--line);background:var(--card)}
 
 /* ===== Outline (heading issues) ===== */
@@ -144,3 +144,31 @@ code,.mono,pre,.box pre,.box pre.outline{font-variant-ligatures:none;font-featur
 .road-cat h3{font:800 22px var(--head);margin:0}
 .road-cat .sc{font:800 22px var(--head)} .road-cat .sc.ok{color:var(--good)} .road-cat .sc.mid{color:var(--high)} .road-cat .sc.bad{color:var(--crit)}
 @media (max-width:760px){.table.road td:first-child,.table.road td:nth-child(2){width:auto}}
+
+/* "After the fix" box */
+.result{background:#eaf1fb;border-left:5px solid var(--med);border-radius:0 12px 12px 0;padding:16px 22px;max-width:800px;margin-top:12px}
+.result .result-title{display:block;color:var(--med);font-weight:700;font-size:17px;margin-bottom:6px}
+.result p{margin:0 0 8px} .result p:last-child{margin-bottom:0}
+.result .result-table{margin:8px 0;background:#fff}
+.result .verify{color:var(--muted);font-size:14px}
+
+/* Google result preview */
+.serp-box{max-width:none;background:#fff}
+.serp-box .cap,.film-box .cap{padding:8px 15px;font-size:13px;color:var(--muted);background:#fff;border-top:1px solid var(--line)}
+.serp{background:#fff;padding:14px 18px 12px;font-family:Arial,Helvetica,sans-serif;max-width:652px}
+.serp-site{display:flex;gap:10px;align-items:center;font-size:14px;line-height:1.3;color:#202124}
+.serp-site b{font-weight:400}
+.serp-fav{width:26px;height:26px;border-radius:50%;background:#f1f3f4;border:1px solid #dadce0;display:flex;align-items:center;justify-content:center;font-size:13px;color:#5f6368;flex:none}
+.serp-url{color:#4d5156;font-size:12px}
+.serp-title{color:#1a0dab;font-size:20px;line-height:1.3;margin:6px 0 3px;width:600px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.serp-desc{color:#4d5156;font-size:14px;line-height:1.58;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+/* Lighthouse load filmstrip */
+.film-box{max-width:none;margin:16px 0}
+.film{display:flex;gap:8px;overflow:hidden;padding:12px;background:#fff}
+.film figure{margin:0;flex:1 1 0;min-width:0;text-align:center}
+.film img{width:100%;max-width:120px;border:1px solid var(--line);border-radius:4px;display:block;margin:0 auto}
+.film figcaption{font-size:12px;color:var(--muted);margin-top:4px;font-family:var(--mono)}
+.film figure.lcp img{outline:3px solid var(--crit);outline-offset:1px}
+.film figure.lcp figcaption{color:var(--crit);font-weight:700}
+.film figure.blank img{opacity:.75}

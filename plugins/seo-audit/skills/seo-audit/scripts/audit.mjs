@@ -110,6 +110,7 @@ const collectJob = desktopOnly ? null : (async () => {
 
 // 2. Lighthouse (own Chrome instance)
 const lhPath = join(data, "lighthouse.json");
+if (!desktopOnly) for (const f of readdirSync(data).filter(f => /^filmstrip-/.test(f))) unlinkSync(join(data, f));
 if (!desktopOnly) for (const f of ["lighthouse.json", "lighthouse-desktop.json", "lighthouse-local.json", "psi-mobile.json", "psi-desktop.json", "desktop.pending"]) if (existsSync(join(data, f))) unlinkSync(join(data, f));
 const lhValid = (p = lhPath) => { try { const j = JSON.parse(readFileSync(p, "utf8")); return !j.runtimeError && j.categories?.performance?.score != null; } catch { return false; } };
 // Two Lighthouse runs at once starve each other ("unable to reliably load the page"),
@@ -212,6 +213,10 @@ let [c, b] = await Promise.all([collectJob, browserJob]);
 let psi = await Promise.race([psiJob, sleep(500).then(() => null)]);
 if (!psi && psiSource() && !isLocal && !flag("no-pagespeed")) psi = await psiJob;
 let l = psi?.mobile?.ok ? { ok: false, msg: "not needed (PageSpeed ran)" } : await lhJob();
+// One real load recorded on throttled slow 4G, on its own so CPU load doesn't skew it: the filmstrip
+// in the report and shots/filmstrip-mobile.png, which shows what a phone visitor sees second by second.
+const fsRun = await run(process.execPath, [join(HERE, "browser.mjs"), "filmstrip", finalUrl, join(data, "filmstrip-mobile.json"), "--width", "390", "--sheet", join(out, "shots", "filmstrip-mobile.png")], { timeout: 90000 });
+console.log(`[${secs()}] ` + (fsRun.code === 0 ? fsRun.so.trim().split("\n").pop().replace(/ -> .*/, "") : "filmstrip: failed " + fsRun.se.trim().split("\n").pop()));
 psi = psi || await psiJob;
 // Lighthouse is sensitive to CPU load; retry once on its own if the parallel run failed.
 if (!l.ok && !psi?.mobile?.ok && !flag("no-lighthouse") && !/not installed/.test(l.msg)) { console.log(`[${secs()}] lighthouse: retrying alone`); l = await runLighthouse(false, /520|403|ERRORED_DOCUMENT|reliably load/.test(l.msg)); }
@@ -244,7 +249,10 @@ const collect = read("collect.json"), rendered = read("rendered.json"), lh = rea
 const checks = buildChecks(collect, rendered, lh);
 const status = { lighthouse: l.ok ? "ok" : l.msg, browser: b.ok ? "ok" : b.msg };
 writeFileSync(join(data, "checks.json"), JSON.stringify({ url, status, checks }, null, 1));
-writeFileSync(join(data, "summary.md"), summaryMarkdown({ url, collect, rendered, lh, sections: secList, checks, status }) +
+const fsData = read("filmstrip-mobile.json");
+const fsMd = !fsData ? "" : `\n## Page load filmstrip (recorded, mobile, slow 4G + 4x CPU)\n\nFirst paint ${(fsData.fcp / 1000).toFixed(1)} s, LCP ${(fsData.lcp / 1000).toFixed(1)} s (\`${fsData.lcp_element}\`), load event ${(fsData.load / 1000).toFixed(1)} s. ` +
+  `Look at \`shots/filmstrip-mobile.png\` (one frame per second): is the headline and main button visible at first paint, or does the page stay blank or half-drawn (content hidden until JavaScript, late fonts, pop-ups, layout jumps)? Use a \`filmstrip\` block for speed issues; \`filmstrip.after.css\` records a second load with a CSS fix applied.\n`;
+writeFileSync(join(data, "summary.md"), summaryMarkdown({ url, collect, rendered, lh, sections: secList, checks, status }) + fsMd +
   speedMarkdown(read("ttfb.json"), pagespeed, read("road-to-100.json")));
 const n = s => checks.filter(x => x.status === s).length;
 console.log(`[${secs()}] done: ${n("fail")} fail, ${n("warn")} warn, ${n("pass")} pass -> ${join(data, "summary.md")}`);
