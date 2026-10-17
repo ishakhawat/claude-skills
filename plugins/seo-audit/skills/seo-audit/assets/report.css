@@ -130,3 +130,17 @@ hr.rule{border:0;border-top:1px solid var(--line);margin:0 0 40px}
 
 /* Show code as typed: no ligatures (the font shorthand above resets these, so they come last) */
 code,.mono,pre,.box pre,.box pre.outline{font-variant-ligatures:none;font-feature-settings:"liga" 0,"calt" 0}
+/* PageSpeed, TTFB and Road to 100 */
+.ff{font:700 13px var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:22px 0 8px}
+.table.data td.ok,.table.data td.mid,.table.data td.bad{font-weight:700;white-space:nowrap}
+.table.data td.ok{color:var(--good)} .table.data td.mid{color:var(--high)} .table.data td.bad{color:var(--crit)}
+.table.road td{font-size:14.5px}
+.table.road td:first-child{width:28%} .table.road td:nth-child(2){width:34%}
+.table.road ul{margin:0;padding-left:16px} .table.road li{margin:2px 0;word-break:break-word}
+.table.road .pts{display:inline-block;margin-top:4px;font:600 12.5px var(--sans);color:var(--crit);background:var(--crit-bg);border-radius:6px;padding:1px 7px}
+.table.road .hint{display:block;margin-top:6px;color:var(--muted)}
+.table.road code{font-size:12.5px}
+.road-cat{display:flex;align-items:baseline;gap:12px;margin:30px 0 4px}
+.road-cat h3{font:800 22px var(--head);margin:0}
+.road-cat .sc{font:800 22px var(--head)} .road-cat .sc.ok{color:var(--good)} .road-cat .sc.mid{color:var(--high)} .road-cat .sc.bad{color:var(--crit)}
+@media (max-width:760px){.table.road td:first-child,.table.road td:nth-child(2){width:auto}}

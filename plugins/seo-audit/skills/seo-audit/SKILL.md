@@ -17,7 +17,7 @@ Speed matters: the scripts collect everything in one parallel run (about 30–60
 - Local dev URLs (Herd/Valet `*.test`, `localhost`) work; self-signed certificates are accepted. Skip findings that only exist because it's a dev environment (no HSTS, debug bar) unless the user asks.
 - **Site name and page name** for the title, e.g. "Acme" and "Pricing page". Derive them from the title tag or H1 if not given.
 
-Work in a new folder in the current directory, `seo-audit-<host>-<slug>/`, unless the user names one.
+The report goes in a new folder, `seo-audit-<host>-<slug>/`, inside the current project folder. When Claude was started without a project (the current folder is a temp or scratch folder, the home folder or a system folder), `audit.mjs` puts it in `~/SEO Audits/` instead so the user can find it later. If the user names a folder, pass it as `<out>`.
 
 ## Step 1: Setup (first run only, about 20 s)
 
@@ -30,18 +30,22 @@ Installs puppeteer-core and Lighthouse into `~/.cache/claude-seo-audit` and chec
 ## Step 2: Collect everything (one command)
 
 ```bash
-node "$SKILL/scripts/audit.mjs" <URL> <out>
+node "$SKILL/scripts/audit.mjs" <URL> [<out>]
 ```
 
-It runs these in parallel: the raw-HTML collector (indexing, meta, headings, images, links, schema, platform), Lighthouse mobile, and a Chrome session at 1440 px and 390 px. It writes `data/summary.md`, `data/checks.json` (pass/warn/fail with suggested severity), the raw JSON, and `shots/desktop-top.png`, `shots/mobile-top.png` and `shots/desktop-full.jpg`. Use `--no-lighthouse` only if Lighthouse keeps failing, and say so in the report.
+The first line it prints is `Output folder: <absolute path>`. Use that absolute path as `<out>` in every later step, and give it to the user, because the current folder may not be where the report is.
+
+It first measures TTFB (5 requests plus 2 cache-busted ones, split into DNS, connect, TLS and server wait), then runs these in parallel: Google PageSpeed Insights mobile and desktop (with real-user Chrome UX data), the raw-HTML collector (indexing, meta, headings, images, links, schema, platform), local Lighthouse mobile, and a Chrome session at 1440 px and 390 px. If PageSpeed is unavailable (no API key, quota used up, or a local site), desktop scores come from a local Lighthouse desktop run instead. PageSpeed needs a free Google API key for reliable use; if `summary.md` says the quota is used up, tell the user once how to add one: `node "$SKILL/scripts/setup.mjs" --pagespeed-key=KEY`, with a key from https://developers.google.com/speed/docs/insights/v5/get-started. It writes `data/summary.md`, `data/checks.json` (pass/warn/fail with suggested severity), the raw JSON, and `shots/desktop-top.png`, `shots/mobile-top.png` and `shots/desktop-full.jpg`. Use `--no-lighthouse` only if Lighthouse keeps failing, and say so in the report.
 
 ## Step 3: Read the page
 
-Read `data/summary.md` in full. It has the platform, the scores, every failed or warning check with details, the heading outline with locators, and the rendered page section by section. Then look at `shots/mobile-top.png` and `shots/desktop-top.png`.
+Read `data/summary.md` in full. It has the platform, the scores, every failed or warning check with details, the heading outline with locators, the rendered page section by section, TTFB, PageSpeed mobile and desktop scores, real-user data, and the "Road to 100" list (every failing Lighthouse audit with the files or elements behind it). Then look at `shots/mobile-top.png` and `shots/desktop-top.png`.
 
 Read the section text like a visitor would. The checks find markup problems, but the most valuable findings usually come from reading: copy left over from another page or audience, an Inertia/Vue/React page whose text and head tags only exist after JavaScript (no SSR), a card that repeats another card's text, a photo of the wrong product, a counter that renders "0+" in the HTML, or a broken sentence. If a section looks suspicious, screenshot it (Step 5) to confirm.
 
 ## Step 4: Decide the issues
+
+The report automatically includes a "PageSpeed and server response" section (scores, lab metrics, real-user data, TTFB with fixes) and a "Road to 100" section (every failing Lighthouse audit, what causes it on this page, and a fix, with WordPress/Shopify/Laravel/Next.js hints). You don't need to repeat those as issues. Raise the ones that matter most as issues with real evidence and a page-specific fix (for example the LCP, render-blocking files, a slow TTFB), and refer to the Road to 100 for the rest. To replace a generic Road to 100 fix with a page-specific one, use `road_notes` in report.json.
 
 Turn the checks and your reading into **8–16 issues**. Merge related findings (all alt-text problems in one issue, all heading problems in one). A page with 40 small issues is a page where nothing gets fixed. Use the suggested severity from the check as a starting point and adjust for impact. See `references/issue-catalog.md` for default severities, where to fix things on each platform, and wording.
 
@@ -87,14 +91,14 @@ Then build:
 node "$SKILL/scripts/build.mjs" <out>
 ```
 
-This re-fetches the page to confirm it hasn't changed, then writes `report.html` and `<Site> <Page> - SEO Audit.pdf`. The severity counts, IDs, scorecard, Lighthouse tiles, checklist, passing checks and footer are generated for you. If it warns that the page changed, re-check the affected issues and rebuild.
+This re-fetches the page to confirm it hasn't changed, writes `report.html` and `<Site> <Page> - SEO Audit.pdf`, then opens the PDF in the user's default viewer (`--no-open` skips that, for example when rebuilding several times). The severity counts, IDs, scorecard, Lighthouse tiles, checklist, passing checks and footer are generated for you. If it warns that the page changed, re-check the affected issues and rebuild.
 
 Check the PDF before handing it over: look for clipped code blocks or missing screenshots, either by viewing the HTML or by rendering crops of the PDF.
 
 ## Step 7: Hand it over
 
 Give the user:
-- the PDF and HTML paths
+- the absolute PDF and HTML paths, as clickable links where the interface supports them, and say the PDF has been opened
 - the severity counts
 - the 2–3 issues to fix first
 - anything you could not test (a widget that didn't load, Lighthouse failing)

@@ -77,5 +77,7 @@ A third item marks the line red with that note.
 ## Top-level switches
 
 - `"scorecard": false` hides the scorecard; `"passes": false` hides "Already in good shape".
+- `"speed": false` hides "PageSpeed and server response"; `"road": false` hides "Road to 100".
+- `"road_notes": {"<lighthouse-audit-id>": "html"}` replaces the generic fix in a Road to 100 row with a page-specific one, e.g. `{"render-blocking-resources": "Defer <code>select2</code> and <code>tooltipster</code>; see {{ref:lcp}}."}`. Audit IDs are in `data/summary.md`.
 - `"title"` overrides the heading (default "<page>: SEO audit"); `"pdf_name"` overrides the file name (default "<site> <page> - SEO Audit.pdf").
 - `"reverified": "text"` skips the automatic re-check.

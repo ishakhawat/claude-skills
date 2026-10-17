@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 // Render <out-dir>/report.json into report.html and a one-page PDF.
 //
-//   node build.mjs <out-dir> [--no-pdf] [--no-reverify]
+//   node build.mjs <out-dir> [--no-pdf] [--no-reverify] [--no-open]
+//
+// Opens the PDF (or the HTML with --no-pdf) in the system viewer when done,
+// unless --no-open or SEO_AUDIT_NO_OPEN=1.
 //
 // Reads report.json (the issues you wrote; see references/report-json.md)
 // plus data/collect.json, data/lighthouse.json and data/checks.json for the
@@ -11,19 +14,20 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { HERE, launch } from "./lib.mjs";
+import { HERE, launch, resolveOut, openFile } from "./lib.mjs";
 import { CATEGORIES, THRESHOLDS, grade, lhMetrics } from "./checks.mjs";
 
 const [, , dirArg, ...rest] = process.argv;
 if (!dirArg || dirArg === "--help") {
-  console.log(readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1, 10).map(l => l.replace(/^\/\/ ?/, "")).join("\n"));
+  console.log(readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1, 13).map(l => l.replace(/^\/\/ ?/, "")).join("\n"));
   process.exit(1);
 }
-const dir = resolve(dirArg);
+const dir = existsSync(join(resolve(dirArg), "report.json")) ? resolve(dirArg) : resolveOut(dirArg);
 const read = f => existsSync(join(dir, f)) ? JSON.parse(readFileSync(join(dir, f), "utf8")) : null;
 const R = read("report.json");
 if (!R) { console.error("Missing " + join(dir, "report.json")); process.exit(1); }
 const C = read("data/collect.json") || {}, LH = read("data/lighthouse.json"), CK = read("data/checks.json");
+const TT = read("data/ttfb.json"), PS = read("data/pagespeed.json"), ROAD = read("data/road-to-100.json");
 
 const esc = s => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const SEV = { Critical: "crit", High: "high", Medium: "med", Low: "low" };
@@ -63,7 +67,8 @@ function lhTiles() {
     { k: "Total blocking", v: Math.round(P.tbt) + " ms", c: grade(P.tbt, THRESHOLDS.tbt) },
     { k: "Layout shift", v: P.cls.toFixed(3), c: grade(P.cls, THRESHOLDS.cls) }]);
 }
-const lhCaption = () => P ? `Lighthouse ${P.version}, mobile emulation with simulated slow 4G, run locally on ${fmtDate(P.fetched, false)}. Real phones on Wi-Fi will be faster, but the ranking is the same.` : "Lighthouse did not run for this report.";
+const viaPSI = PS?.sources?.mobile === "Google PageSpeed Insights";
+const lhCaption = () => P ? `Lighthouse ${P.version}, mobile emulation with simulated slow 4G, ${viaPSI ? "run by Google PageSpeed Insights" : "run locally"} on ${fmtDate(P.fetched, false)}. Real phones on Wi-Fi will be faster, but the ranking is the same.` : "Lighthouse did not run for this report.";
 
 function shotBox(s, cls, label) {
   if (!s) return "";
@@ -135,7 +140,7 @@ const metaLine = [
   ["Page", meta.page ?? (C.page_id ? `#${C.page_id}${platform ? ` (${platform})` : ""}` : platform || null)],
   ["Last edited", meta.last_edited ?? (C.modified_time ? fmtDate(C.modified_time) : null)],
   ["Re-verified", meta.reverified ?? (reverified || null)],
-  ["Tested", meta.tested ?? `Chrome desktop 1440 px, iPhone 390 px${P ? `, Lighthouse ${P.version.split(".").slice(0, 2).join(".")} mobile` : ""}`],
+  ["Tested", meta.tested ?? `Chrome desktop 1440 px, iPhone 390 px${P ? `, Lighthouse ${P.version.split(".").slice(0, 2).join(".")} mobile${PS?.desktop ? " + desktop" : ""}${viaPSI ? " via Google PageSpeed" : ""}` : ""}${TT?.cached ? ", TTFB × " + TT.cached.n : ""}`],
 ].filter(([, v]) => v);
 
 // ---------- scorecard ----------
@@ -165,6 +170,78 @@ function passes() {
 <ul class="passes">${xs.map(c => `<li><span class="pc">${esc(c.cat)}</span> ${esc(c.label)}</li>`).join("")}</ul>`;
 }
 
+// ---------- PageSpeed, TTFB, Road to 100 ----------
+const fmtMs = v => v == null ? "–" : v >= 1000 ? (v / 1000).toFixed(1) + " s" : Math.round(v) + " ms";
+const short = u => { try { const x = new URL(u); return (x.hostname === new URL(C.final_url || u).hostname ? "" : x.hostname) + x.pathname.replace(/^(.{0,20}).*(\/[^/]{0,48})$/, (m, a, b) => m.length > 72 ? a + "…" + b : m); } catch { return u; } };
+const itemHtml = i => C.final_url && i.what === C.final_url ? `Page HTML and inline scripts${i.value ? " " + esc(i.value) : ""}` : /^https?:/.test(i.what) ? `<code>${esc(short(i.what))}</code>${i.value ? " " + esc(i.value) : ""}` : `${esc(i.what)}${i.value ? " <b>" + esc(i.value) + "</b>" : ""}`;
+function speedSection() {
+  if (R.speed === false || (!PS && !TT)) return "";
+  const g = (v, t, hi) => v == null ? "" : grade(v, t, hi);
+  const ff = ["mobile", "desktop"].filter(f => PS?.[f]);
+  let h = `<h2 class="section-title" style="margin-top:44px">PageSpeed and server response</h2>
+<p class="section-sub">${ff.length ? `Scores from ${[...new Set(ff.map(f => PS.sources[f]))].join(" and ")}${viaPSI ? "" : " (Google PageSpeed was not available: " + esc(PS?.status?.mobile || "") + ")"}. Lab scores move a few points between runs.` : ""} <a href="${esc(PS?.report_url || "")}">Open in PageSpeed Insights</a>.</p>`;
+  for (const f of ff) {
+    const s = PS[f];
+    h += `<div class="ff">${f === "mobile" ? "Mobile" : "Desktop"}</div>` + metricTiles([
+      { k: "Performance", v: s.performance, c: g(s.performance, THRESHOLDS.score, true) }, { k: "Accessibility", v: s.accessibility, c: g(s.accessibility, THRESHOLDS.score, true) },
+      { k: "Best practices", v: s.best_practices, c: g(s.best_practices, THRESHOLDS.score, true) }, { k: "SEO", v: s.seo, c: g(s.seo, THRESHOLDS.score, true) }]);
+  }
+  if (ff.length) {
+    const rows = [["Largest Contentful Paint (LCP)", "lcp", THRESHOLDS.lcp, fmtMs, "≤ 2.5 s"], ["First Contentful Paint (FCP)", "fcp", THRESHOLDS.fcp, fmtMs, "≤ 1.8 s"],
+      ["Total Blocking Time (TBT)", "tbt", THRESHOLDS.tbt, fmtMs, "≤ 200 ms"], ["Cumulative Layout Shift (CLS)", "cls", THRESHOLDS.cls, v => v?.toFixed(3) ?? "–", "≤ 0.1"],
+      ["Speed Index", "si", [3400, 5800], fmtMs, "≤ 3.4 s"]];
+    h += `<table class="table data"><thead><tr><th>Lab metric</th>${ff.map(f => `<th>${f}</th>`).join("")}<th>Good</th></tr></thead><tbody>${rows.map(([n, k, t, fm, good]) =>
+      `<tr><td>${n}</td>${ff.map(f => `<td class="${g(PS[f][k], k === "si" && f === "desktop" ? [1300, 2300] : t)}">${fm(PS[f][k])}</td>`).join("")}<td>${good}</td></tr>`).join("")}</tbody></table>`;
+  }
+  const fd = PS?.field?.page || PS?.field?.origin;
+  if (fd) {
+    const cls = c => c === "FAST" ? "ok" : c === "AVERAGE" ? "mid" : "bad";
+    h += `<div class="ff">Real users (Chrome UX Report, last 28 days, mobile, 75th percentile${PS.field.page ? "" : ", whole site: this page has too little traffic for its own data"})</div>
+<table class="table data"><thead><tr><th>Metric</th><th>Real users</th><th>Rating</th></tr></thead><tbody>${fd.metrics.map(m =>
+      `<tr><td>${m.name}</td><td class="${cls(m.category)}">${m.unit === "cls" ? m.p75.toFixed(2) : fmtMs(m.p75)}</td><td>${esc(m.category.replace("AVERAGE", "NEEDS IMPROVEMENT").toLowerCase())}</td></tr>`).join("")}</tbody></table>
+<p class="note">Core Web Vitals assessment: <b>${fd.overall === "FAST" ? "passed" : fd.overall ? "failed" : "unknown"}</b>. This is what Google uses for ranking; the lab scores above explain why.</p>`;
+  } else if (PS) h += `<p class="note">No real-user (field) data: ${PS.status?.api_key ? "Google does not have enough Chrome traffic for this site yet." : viaPSI ? "Google does not have enough Chrome traffic for this site yet." : "it comes from Google PageSpeed, which did not run (add a free API key, see the README)."}</p>`;
+  if (TT?.cached) {
+    const c = TT.cached, b = TT.busted;
+    h += `<div class="ff">Time to first byte (TTFB), ${c.n} requests from the audit machine</div>` + metricTiles([
+      { k: "TTFB (median)", v: c.ttfb_ms + " ms", c: c.ttfb_ms <= 800 ? "ok" : c.ttfb_ms <= 1800 ? "mid" : "bad" },
+      { k: "Server wait", v: c.wait_ms + " ms", c: c.wait_ms <= 200 ? "ok" : c.wait_ms <= 600 ? "mid" : "bad" },
+      { k: "DNS + connect + TLS", v: (c.dns_ms + c.connect_ms + c.tls_ms) + " ms", c: c.dns_ms + c.connect_ms + c.tls_ms <= 150 ? "ok" : "mid" },
+      { k: "Uncached page", v: b ? b.ttfb_ms + " ms" : "–", c: b ? (b.ttfb_ms <= 800 ? "ok" : b.ttfb_ms <= 1800 ? "mid" : "bad") : "" }]);
+    const cache = TT.cache_status || Object.entries(TT.headers || {}).filter(([k]) => /cache|age/.test(k)).map(([k, v]) => k + ": " + v).join(", ");
+    const tips = [];
+    if (TT.redirects?.length) tips.push(`The URL redirects ${TT.redirects.length}× first (${TT.redirects.map(r => r.status).join(", ")}), adding ${TT.redirect_ms} ms: link to <code>${esc(TT.final_url)}</code> directly.`);
+    if (c.wait_ms > 200) tips.push(`The server takes ${c.wait_ms} ms to start answering. ${/DYNAMIC|MISS|BYPASS/i.test(cache || "") || !cache ? "The HTML is not served from a cache" + (cache ? ` (<code>${esc(cache)}</code>)` : "") + ": turn on full-page caching and cache HTML at the CDN edge (e.g. Cloudflare APO or a Cache Everything rule with bypass on login cookies)." : "Check the full-page cache hit rate and slow back-end work."}`);
+    if (b && c && b.wait_ms > c.wait_ms * 1.5 && b.wait_ms - c.wait_ms > 150) tips.push(`An uncached page takes ${b.ttfb_ms} ms versus ${c.ttfb_ms} ms cached, so visitors who miss the cache wait longer: speed up the origin (PHP/OPcache, database queries, object cache).`);
+    h += `<p class="note">Breakdown (median): DNS ${c.dns_ms} ms, connect ${c.connect_ms} ms, TLS ${c.tls_ms} ms, server wait ${c.wait_ms} ms; range ${c.min_ms}–${c.max_ms} ms. Google rates TTFB under 800 ms as good; under 200 ms of server wait is the target for a cached page. Measured from the audit machine, so network distance to the server is included.${cache ? ` Cache headers: <code>${esc(cache)}</code>.` : ""}</p>` +
+      (tips.length ? `<div class="fix"><span class="fix-title">Fix TTFB</span><ol>${tips.map(t => `<li>${t}</li>`).join("")}</ol></div>` : "");
+  }
+  return h;
+}
+function roadSection() {
+  if (R.road === false || !ROAD?.mobile) return "";
+  const notes = R.road_notes || {};
+  const sc = v => grade(v, THRESHOLDS.score, true);
+  let h = `<h2 class="section-title" style="margin-top:44px">Road to 100</h2>
+<p class="section-sub">Every check that keeps a ${PS?.sources?.mobile ? esc(PS.sources.mobile) : "Lighthouse"} score below 100 on mobile, with what causes it on this page and how to fix it, biggest impact first. "Points" is how much of the category score the check costs. Performance is scored from the five metrics, so the fixes there are ranked by estimated time saved.</p>`;
+  const row = a => `<tr><td><b>${esc(a.title)}</b>${a.display ? `<br><span class="hint">${esc(a.display)}</span>` : ""}${a.points_lost ? `<br><span class="pts">−${a.points_lost} points</span>` : ""}</td>
+<td>${a.items.length ? `<ul>${a.items.slice(0, 5).map(i => `<li>${itemHtml(i)}</li>`).join("")}</ul>` : "–"}</td>
+<td>${refs(notes[a.id] || esc(a.fix).replace(/`([^`]+)`/g, "<code>$1</code>"))}${a.hint ? `<span class="hint">${esc(a.hint).replace(/`([^`]+)`/g, "<code>$1</code>")}</span>` : ""}</td></tr>`;
+  for (const c of Object.values(ROAD.mobile)) {
+    h += `<div class="road-cat"><h3>${esc(c.title)}</h3><span class="sc ${sc(c.score)}">${c.score}${c.score < 100 ? " → 100" : ""}</span></div>`;
+    if (c.metrics) h += `<table class="table data"><thead><tr><th>Metric</th><th>Value</th><th>Metric score</th><th>Points lost</th></tr></thead><tbody>${c.metrics.map(m =>
+      `<tr><td>${esc(m.name)}</td><td>${esc(m.value)}</td><td class="${sc(m.score)}">${m.score}</td><td>${m.points_lost ? "−" + m.points_lost : "0"}</td></tr>`).join("")}</tbody></table>`;
+    h += c.audits.length ? `<table class="table data road"><thead><tr><th>Problem</th><th>What causes it on this page</th><th>Fix</th></tr></thead><tbody>${c.audits.map(row).join("")}</tbody></table>`
+      : `<p class="note">Nothing to fix: this category already scores 100.</p>`;
+  }
+  if (ROAD.desktop) {
+    const mob = new Set(Object.values(ROAD.mobile).flatMap(c => c.audits.map(a => a.id)));
+    const extra = Object.values(ROAD.desktop).flatMap(c => c.audits.filter(a => !mob.has(a.id)));
+    if (extra.length) h += `<div class="road-cat"><h3>Desktop only</h3></div><table class="table data road"><thead><tr><th>Problem</th><th>What causes it on this page</th><th>Fix</th></tr></thead><tbody>${extra.map(row).join("")}</tbody></table>`;
+  }
+  return h;
+}
+
 const title = R.title || `${R.page}: SEO audit`;
 const css = readFileSync(join(HERE, "../assets/report.css"), "utf8");
 const footer = R.footer || `Checked on ${fmtDate(C.fetched_at_utc ? C.fetched_at_utc.replace(" UTC", "Z").replace(" ", "T") : Date.now(), false)} against the live page${R._reverify_time ? ` and re-verified at ${new Date(R._reverify_time).toISOString().slice(11, 16)} UTC` : ""}. "After" screenshots were made by editing the page in a local headless browser; nothing was changed on the website. Click any screenshot to open it full size.${R.footer_extra ? " " + R.footer_extra : ""}`;
@@ -190,6 +267,8 @@ ${issues.map(x => `<tr><td class="id">${x.id}</td><td><a href="#${x.id.toLowerCa
 </tbody></table>
 <h2 class="section-title" style="margin-bottom:22px">Issues in detail</h2>
 ${issues.map(issueHtml).join("\n")}
+${speedSection()}
+${roadSection()}
 ${checklist.length ? `<h2 class="section-title" style="margin-top:44px">Fix checklist</h2>
 <p class="section-sub">${esc(R.checklist_intro || "In order of priority.")}</p>
 ${checklist.map(x => `<div class="check"><span class="cb"></span><span class="txt">${refs(x.check || x.short || x.title)}</span><span class="ref">${x.id}</span></div>`).join("\n")}` : ""}
@@ -198,6 +277,7 @@ ${passes()}
 </div></body></html>`;
 
 writeFileSync(join(dir, "report.html"), html);
+let opened = join(dir, "report.html");
 console.log(`report.html: ${issues.length} issues (${ORDER.map(s => counts[s] + " " + s).join(", ")})`);
 
 if (!rest.includes("--no-pdf")) {
@@ -211,10 +291,16 @@ if (!rest.includes("--no-pdf")) {
     await page.emulateMediaType("screen");
     const h = await page.evaluate(() => Math.ceil(document.documentElement.scrollHeight));
     const maxPx = 19000; // Chrome's single-page limit is about 200 inches
-    await page.pdf({ path: join(dir, name), width: "1120px", height: Math.min(h + 2, maxPx) + "px", printBackground: true,
-      margin: { top: 0, right: 0, bottom: 0, left: 0 } });
-    console.log(`${name}: 1120x${h}px${h > maxPx ? ", split into several pages" : ", single page"}`);
+    // Taller reports are scaled down to stay one page (vector text stays sharp); very tall ones are split.
+    const scale = h <= maxPx ? 1 : maxPx / (h + 2) >= 0.55 ? Math.floor(maxPx / (h + 2) * 1000) / 1000 : 1;
+    await page.pdf({ path: join(dir, name), width: Math.floor(1120 * scale) + "px", height: Math.min(Math.ceil((h + 2) * scale), maxPx) + "px", scale,
+      printBackground: true, margin: { top: 0, right: 0, bottom: 0, left: 0 } });
+    opened = join(dir, name);
+    console.log(`${name}: 1120x${h}px${scale < 1 ? `, scaled to ${Math.round(scale * 100)}% to fit one page` : h > maxPx ? ", split into several pages" : ", single page"}`);
   } finally { await browser.close(); }
 }
 
-process.exit(process.exitCode || 0);
+console.log("Report: " + opened);
+if (!rest.includes("--no-open") && !process.env.SEO_AUDIT_NO_OPEN && openFile(opened)) console.log("Opened in the default viewer.");
+// Give the detached viewer process a moment to start before exiting.
+setTimeout(() => process.exit(process.exitCode || 0), 300);

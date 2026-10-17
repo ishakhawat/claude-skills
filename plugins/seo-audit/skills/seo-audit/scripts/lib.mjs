@@ -1,8 +1,9 @@
 // Shared helpers: dependency loading, Chrome launch, page inspection.
 import { createRequire } from "node:module";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { homedir } from "node:os";
+import { dirname, join, resolve, isAbsolute } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export const HERE = dirname(fileURLToPath(import.meta.url));
@@ -187,4 +188,35 @@ export async function sections(page) {
         links: [...el.querySelectorAll("a[href]")].filter(vis).slice(0, 12).map(a => ((a.innerText || a.getAttribute("aria-label") || "").trim().slice(0, 40) + " -> " + a.getAttribute("href")).slice(0, 160)) };
     });
   `), LOC);
+}
+
+// Where reports go. A relative out-dir is resolved against the current folder,
+// unless that folder is temporary or one the user can't easily find (a temp or
+// scratch workspace, the home folder, a system folder); then it goes to
+// ~/SEO Audits instead. SEO_AUDIT_OUT overrides the root.
+export function isHiddenCwd(cwd = process.cwd()) {
+  const p = cwd.replace(/\\/g, "/").toLowerCase(), home = homedir().replace(/\\/g, "/").toLowerCase();
+  const tmp = tmpdir().replace(/\\/g, "/").toLowerCase();
+  return p === home || p === "/" || /^[a-z]:\/?$/.test(p) || p.startsWith(tmp) ||
+    /^(\/private)?\/(tmp|var\/folders)\//.test(p + "/") || /scratch-workspaces|\/appdata\/local\/temp|\/windows\/system32|\/library\/application support\//.test(p);
+}
+export function outputRoot() {
+  if (process.env.SEO_AUDIT_OUT) return resolve(process.env.SEO_AUDIT_OUT);
+  return isHiddenCwd() ? join(homedir(), "SEO Audits") : process.cwd();
+}
+export function resolveOut(arg) { return isAbsolute(arg) ? arg : join(outputRoot(), arg); }
+export function defaultOutName(url) {
+  const u = new URL(url), host = u.hostname.replace(/^www\./, "");
+  const slug = u.pathname.split("/").filter(Boolean).pop()?.replace(/\.\w+$/, "").replace(/[^a-z0-9-]+/gi, "-").toLowerCase() || "home";
+  return `seo-audit-${host}-${slug}`;
+}
+
+// Open a file with the system viewer (PDF reader / browser). Never throws.
+export function openFile(file) {
+  try {
+    const [cmd, args] = process.platform === "darwin" ? ["open", [file]]
+      : process.platform === "win32" ? ["cmd", ["/c", "start", "", file]] : ["xdg-open", [file]];
+    spawn(cmd, args, { detached: true, stdio: "ignore", windowsHide: true }).on("error", () => {}).unref();
+    return true;
+  } catch { return false; }
 }
