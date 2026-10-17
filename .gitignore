@@ -4,3 +4,5 @@ package-lock.json
 __pycache__/
 *.pyc
 seo-audit-*/
+.wrangler/
+.dev.vars

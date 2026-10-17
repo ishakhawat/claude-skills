@@ -226,7 +226,7 @@ function speedSection() {
 <table class="table data"><thead><tr><th>Metric</th><th>Real users</th><th>Rating</th></tr></thead><tbody>${fd.metrics.map(m =>
       `<tr><td>${m.name}</td><td class="${cls(m.category)}">${m.unit === "cls" ? m.p75.toFixed(2) : fmtMs(m.p75)}</td><td>${esc(m.category.replace("AVERAGE", "NEEDS IMPROVEMENT").toLowerCase())}</td></tr>`).join("")}</tbody></table>
 <p class="note">Core Web Vitals assessment: <b>${fd.overall === "FAST" ? "passed" : fd.overall ? "failed" : "unknown"}</b>. This is what Google uses for ranking; the lab scores above explain why.</p>`;
-  } else if (PS) h += `<p class="note">No real-user (field) data: ${PS.status?.api_key ? "Google does not have enough Chrome traffic for this site yet." : viaPSI ? "Google does not have enough Chrome traffic for this site yet." : "it comes from Google PageSpeed, which did not run (add a free API key, see the README)."}</p>`;
+  } else if (PS) h += `<p class="note">No real-user (field) data: ${viaPSI ? "Google does not have enough Chrome traffic for this site yet." : `it comes from Google PageSpeed, which did not run (${esc(PS.status?.mobile || "unknown error")}).`}</p>`;
   if (TT?.cached) {
     const c = TT.cached, b = TT.busted;
     h += `<div class="ff">Time to first byte (TTFB), ${c.n} requests from the audit machine</div>` + metricTiles([

@@ -16,9 +16,9 @@
 // mobile 390 px, dumps the page section by section and takes the baseline
 // screenshots. Also in parallel: TTFB samples (ttfb.py) and Google PageSpeed
 // Insights mobile + desktop (with real-user field data) when the site is public;
-// PageSpeed needs a free API key (setup.mjs --pagespeed-key=KEY or
-// PAGESPEED_API_KEY) unless Google's shared quota happens to be free. Without
-// PageSpeed, desktop scores come from a local Lighthouse desktop run.
+// PageSpeed goes through the plugin's shared proxy, or straight to Google with
+// the user's own key (setup.mjs --pagespeed-key=KEY or PAGESPEED_API_KEY).
+// Without PageSpeed, desktop scores come from a local Lighthouse desktop run.
 // Then writes:
 //   data/collect.json  data/rendered.json  data/sections.json  data/lighthouse.json
 //   data/checks.json   (pass / warn / fail for ~60 checks)
@@ -31,7 +31,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HERE, CACHE, CHROME, depPath, launch, open, warm, inspect, sections, sleep, resolveOut, defaultOutName } from "./lib.mjs";
 import { buildChecks, summaryMarkdown } from "./checks.mjs";
-import { psiKey, fetchPSI, fieldData, roadTo100, scoresOf, readJSON, speedMarkdown } from "./pagespeed.mjs";
+import { psiKey, psiSource, fetchPSI, fieldData, roadTo100, scoresOf, readJSON, speedMarkdown } from "./pagespeed.mjs";
 
 const [, , url, ...args] = process.argv;
 if (!url || url === "--help") {
@@ -94,7 +94,7 @@ const psiJob = (async () => {
   const [mobile, desktop] = await Promise.all(["mobile", "desktop"].map(st => fetchPSI(finalUrl, st, key)));
   for (const [st, r] of [["mobile", mobile], ["desktop", desktop]]) if (r.ok) writeFileSync(join(data, `psi-${st}.json`), JSON.stringify(r.json));
   console.log(`[${secs()}] pagespeed: mobile ${mobile.ok ? "done" : "failed: " + mobile.msg}; desktop ${desktop.ok ? "done" : "failed: " + desktop.msg}`);
-  return { mobile, desktop, keyed: !!key };
+  return { mobile, desktop, source: psiSource() };
 })();
 
 // 1. raw HTML collector
@@ -210,7 +210,7 @@ const browserJob = (async () => {
 let [c, b] = await Promise.all([collectJob, browserJob]);
 // With a working PageSpeed result the local mobile run is redundant: skip it (~25 s).
 let psi = await Promise.race([psiJob, sleep(500).then(() => null)]);
-if (!psi && psiKey() && !isLocal && !flag("no-pagespeed")) psi = await psiJob;
+if (!psi && psiSource() && !isLocal && !flag("no-pagespeed")) psi = await psiJob;
 let l = psi?.mobile?.ok ? { ok: false, msg: "not needed (PageSpeed ran)" } : await lhJob();
 psi = psi || await psiJob;
 // Lighthouse is sensitive to CPU load; retry once on its own if the parallel run failed.
@@ -231,7 +231,7 @@ const lhM = readJSON(lhPath), lhD = readJSON(join(data, "lighthouse-desktop.json
 const label = s => s === "pagespeed" ? "Google PageSpeed Insights" : s === "local" ? "Lighthouse (local)" : null;
 const pagespeed = {
   url, sources: { mobile: label(sources.mobile), desktop: label(sources.desktop) },
-  status: { mobile: psi.mobile.ok ? "ok" : psi.mobile.msg, desktop: psi.desktop.ok ? "ok" : psi.desktop.msg, api_key: !!psi.keyed },
+  status: { mobile: psi.mobile.ok ? "ok" : psi.mobile.msg, desktop: psi.desktop.ok ? "ok" : psi.desktop.msg, via: psi.source || null },
   mobile: scoresOf(lhM), desktop: scoresOf(lhD),
   field: psi.mobile.ok ? fieldData(psi.mobile.json) : null, field_desktop: psi.desktop.ok ? fieldData(psi.desktop.json) : null,
   report_url: `https://pagespeed.web.dev/analysis?url=${encodeURIComponent(finalUrl)}`,

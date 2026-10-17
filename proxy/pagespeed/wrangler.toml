@@ -1,0 +1,25 @@
+name = "seo-audit-pagespeed"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+# PageSpeed requests per IP per UTC day (one audit uses 2).
+DAILY_LIMIT = "100"
+
+# Burst limit per IP: 12 requests a minute (a 6-page multi-page audit).
+[[ratelimits]]
+name = "BURST"
+namespace_id = "1001"
+simple = { limit = 12, period = 60 }
+
+[[durable_objects.bindings]]
+name = "DAILY"
+class_name = "DailyQuota"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["DailyQuota"]
+
+# The Google API key is a secret, never in this file:
+#   npx wrangler secret put PSI_KEY

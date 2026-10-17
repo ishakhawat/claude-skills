@@ -6,8 +6,18 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { CACHE } from "./lib.mjs";
 
-// ---------- API key ----------
+// ---------- API key or shared proxy ----------
+// With the user's own key (PAGESPEED_API_KEY or setup.mjs --pagespeed-key) the
+// audit calls Google directly. Without one it goes through the plugin's proxy
+// (proxy/pagespeed in the repo), which keeps a shared key private and limits
+// requests per IP. SEO_AUDIT_PSI_PROXY overrides the proxy URL; "off" disables it.
 const CONFIG = join(CACHE, "config.json");
+const PROXY = "https://seo-audit-pagespeed.shakhawat-flickmedia.workers.dev";
+export function psiProxy() {
+  const p = process.env.SEO_AUDIT_PSI_PROXY ?? PROXY;
+  return p && p !== "off" ? p.replace(/\/$/, "") : null;
+}
+export function psiSource() { return psiKey() ? "own key" : psiProxy() ? "shared proxy" : null; }
 export function psiKey() {
   if (process.env.PAGESPEED_API_KEY) return process.env.PAGESPEED_API_KEY;
   try { return JSON.parse(readFileSync(CONFIG, "utf8")).pagespeed_api_key || null; } catch { return null; }
@@ -21,16 +31,20 @@ export function savePsiKey(key) {
 
 // ---------- PageSpeed Insights API ----------
 export async function fetchPSI(url, strategy, key) {
+  const proxy = !key && psiProxy();
+  if (!key && !proxy) return { ok: false, msg: "no PageSpeed API key" };
   const q = new URLSearchParams({ url, strategy });
-  for (const c of ["PERFORMANCE", "ACCESSIBILITY", "BEST_PRACTICES", "SEO"]) q.append("category", c);
-  if (key) q.set("key", key);
+  if (key) {
+    for (const c of ["PERFORMANCE", "ACCESSIBILITY", "BEST_PRACTICES", "SEO"]) q.append("category", c);
+    q.set("key", key);
+  }
   const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 150000);
   try {
-    const r = await fetch("https://www.googleapis.com/pagespeedonline/v5/runPagespeed?" + q, { signal: ctl.signal });
+    const r = await fetch((proxy ? proxy + "/" : "https://www.googleapis.com/pagespeedonline/v5/runPagespeed") + "?" + q, { signal: ctl.signal });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.error) {
       const msg = j.error?.message || `HTTP ${r.status}`;
-      return { ok: false, status: r.status, msg: r.status === 429 && !key ? "Google's shared PageSpeed quota is used up; add a free API key (setup.mjs --pagespeed-key=KEY)" : msg.slice(0, 200) };
+      return { ok: false, status: r.status, msg: (proxy ? "shared PageSpeed proxy: " : "") + msg.slice(0, 200) };
     }
     if (j.lighthouseResult?.runtimeError) return { ok: false, msg: j.lighthouseResult.runtimeError.message };
     return { ok: true, json: j };

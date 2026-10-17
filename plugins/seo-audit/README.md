@@ -48,12 +48,16 @@ Several pages: one `page-auditor` agent per page, all at once (Lighthouse runs t
 
 Claude reads a condensed `summary.md` instead of large JSON files.
 
-## Google PageSpeed API key (optional, free)
+## Google PageSpeed (no key needed)
 
-Without a key, Google's shared PageSpeed quota is usually used up, so scores come from Lighthouse run locally (same engine, no real-user data). With a key you get Google's own PageSpeed numbers and real-user Core Web Vitals:
+Scores, lab metrics and real-user Core Web Vitals come from Google PageSpeed Insights through the plugin's shared proxy, so it works right after install. The proxy keeps the API key private and allows each IP address 12 requests a minute and 100 a day (one audit uses 2). If the proxy is unavailable or the limit is reached, scores come from Lighthouse run locally (same engine, no real-user data).
+
+For no daily limit, use your own free key; the audit then calls Google directly:
 
 1. Get a key: https://developers.google.com/speed/docs/insights/v5/get-started (Get a Key).
 2. Save it once: `node <plugin>/skills/seo-audit/scripts/setup.mjs --pagespeed-key=YOUR_KEY`, or set `PAGESPEED_API_KEY`.
+
+`SEO_AUDIT_PSI_PROXY=off` turns the proxy off. The proxy's code is in [`proxy/pagespeed`](../../proxy/pagespeed).
 
 ## Requirements
 

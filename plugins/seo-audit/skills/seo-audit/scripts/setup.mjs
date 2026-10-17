@@ -3,12 +3,12 @@
 // (outside the plugin folder, so plugin updates keep them). Uses your installed Chrome;
 // no browser is downloaded.
 //
-//   node setup.mjs [--pagespeed-key=KEY]   save a Google PageSpeed API key (free)
+//   node setup.mjs [--pagespeed-key=KEY]   save your own Google PageSpeed API key (optional; a shared proxy is used otherwise)
 import { execSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CACHE, CHROME, HERE } from "./lib.mjs";
-import { psiKey, savePsiKey } from "./pagespeed.mjs";
+import { psiSource, savePsiKey } from "./pagespeed.mjs";
 
 const [major] = process.versions.node.split(".").map(Number);
 if (major < 18) { console.error(`Node.js 18+ is required (found ${process.version}).`); process.exit(1); }
@@ -27,6 +27,6 @@ let py = "";
 for (const c of ["python3", "python"]) { try { py = execSync(`${c} --version`).toString().trim(); break; } catch {} }
 console.log(`Chrome: ${CHROME || "NOT FOUND (install Google Chrome or set CHROME_PATH)"}`);
 console.log(`Python: ${py || "NOT FOUND (install Python 3)"}`);
-console.log(`PageSpeed API key: ${psiKey() ? "set" : "not set (optional: Google PageSpeed + real-user data need a free key; without one, scores come from local Lighthouse)"}`);
+console.log(`PageSpeed: ${psiSource() === "own key" ? "your own API key" : psiSource() ? "the plugin's shared proxy (no key needed; add your own with --pagespeed-key=KEY for no daily limit)" : "off (scores come from local Lighthouse)"}`);
 console.log(CHROME && py ? "setup ok" : "setup incomplete");
 process.exit(CHROME && py ? 0 : 1);
