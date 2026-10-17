@@ -1,6 +1,6 @@
 {
   "name": "seo-audit",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Developer-ready SEO audit of any web page as a designed HTML report and one-page PDF, with live evidence, before/after fixes, Lighthouse metrics and 60+ automated checks.",
   "author": { "name": "Shakhawat", "url": "https://github.com/ishakhawat" },
   "license": "MIT",

@@ -16,7 +16,7 @@
 html,body{margin:0;background:var(--bg);color:var(--body);font:400 17px/1.6 var(--sans);-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .wrap{max-width:1120px;margin:0 auto;padding:44px 36px 64px}
 a{color:var(--link);text-decoration:none}
-code,.mono{font-variant-ligatures:none;font-family:var(--mono);font-size:.86em;background:var(--code-bg);border-radius:4px;padding:1px 5px;color:var(--ink)}
+code,.mono{font-family:var(--mono);font-size:.86em;background:var(--code-bg);border-radius:4px;padding:1px 5px;color:var(--ink)}
 h1,h2,h3{font-family:var(--head);color:var(--ink);letter-spacing:-.015em;margin:0}
 
 /* ===== Header ===== */
@@ -71,7 +71,7 @@ hr.rule{border:0;border-top:1px solid var(--line);margin:0 0 40px}
 .box-label{font:600 13px var(--sans);letter-spacing:.1em;text-transform:uppercase;padding:9px 15px;border-bottom:1px solid var(--line)}
 .box.before .box-label{background:var(--crit-bg);color:var(--crit)}
 .box.after .box-label{background:var(--good-bg);color:var(--good)}
-.box pre{font-variant-ligatures:none;margin:0;padding:16px 18px;font:400 13px/1.75 var(--mono);color:var(--ink);white-space:pre-wrap;word-break:break-word;flex:1}
+.box pre{margin:0;padding:16px 18px;font:400 13px/1.75 var(--mono);color:var(--ink);white-space:pre-wrap;word-break:break-word;flex:1}
 .box pre .del{background:var(--del-bg);color:var(--crit)}
 .box pre .add{background:var(--add-bg);color:var(--good)}
 .box pre .cm{color:var(--muted)}
@@ -127,3 +127,6 @@ hr.rule{border:0;border-top:1px solid var(--line);margin:0 0 40px}
   .metrics,.metrics.four,.cats{grid-template-columns:repeat(2,1fr)}.passes{columns:1}.loc{margin-left:0}.table td.where{width:auto}
 }
 @media print{ .issue{break-inside:auto} a{color:inherit} }
+
+/* Show code as typed: no ligatures (the font shorthand above resets these, so they come last) */
+code,.mono,pre,.box pre,.box pre.outline{font-variant-ligatures:none;font-feature-settings:"liga" 0,"calt" 0}

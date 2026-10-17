@@ -116,7 +116,13 @@ export async function inspect(page) {
         if (top && !h1.contains(top) && top !== h1 && !top.contains(h1)) covered.push(loc(top));
       }
     }
-    const buttons = [...document.querySelectorAll("a[class*=button],a[class*=btn],button,input[type=submit],[role=button],a[class*=cta]")]
+    // Buttons by name, plus links styled as buttons (Tailwind etc.): filled or bordered, rounded, button-sized.
+    const looksLikeButton = a => { const s = getComputedStyle(a), r = a.getBoundingClientRect();
+      const filled = s.backgroundColor !== "rgba(0, 0, 0, 0)" && s.backgroundColor !== "transparent";
+      const bordered = parseFloat(s.borderTopWidth) > 0;
+      return (filled || bordered) && parseFloat(s.borderTopLeftRadius) >= 4 && r.height >= 32 && r.width >= 80; };
+    const buttons = [...new Set([...document.querySelectorAll("a[class*=button],a[class*=btn],button,input[type=submit],[role=button],a[class*=cta]"),
+        ...[...document.querySelectorAll("a[href]")].filter(looksLikeButton)])]
       .filter(b => vis(b) && !b.closest("nav,header,[role=navigation],[class*=menu],[id*=menu]")).map(b => ({ text: (b.innerText || b.value || "").trim().slice(0, 40), href: b.getAttribute("href"),
         top: Math.round(b.getBoundingClientRect().top + scrollY) }))
       .filter(b => b.text && b.top > 100).sort((a, b) => a.top - b.top);
