@@ -30,6 +30,7 @@
 }
 ```
 
+- **Issue files.** Issues can also live in `issues/*.json` next to `report.json` (one issue object, or an array, per file). `build.mjs` appends them after `report.json`'s own issues, so writer agents can work in parallel without editing the same file. Files are read in name order; severity sorting happens after merging.
 - **Order and IDs.** Issues are sorted Critical → High → Medium → Low (keeping your order within a severity) and numbered `B1`, `B2`, …. To refer to another issue, give it a `key` and write `{{ref:key}}`; it becomes that issue's ID. Don't type IDs by hand.
 - **severity**: exactly `Critical`, `High`, `Medium` or `Low`.
 - **short**: the shorter title used in the "All issues" table. Defaults to `title`.

@@ -34,12 +34,17 @@ or just: "audit this page and make a report: https://…"
 
 ## How it stays fast
 
+Nothing is skipped; the work runs in parallel:
+
 | Step | Time |
 |---|---|
 | Setup (first run only) | about 20 s |
-| Evidence: raw HTML, link check, sitemap lookup, Lighthouse and a desktop + mobile Chrome session, all in parallel | 20–45 s |
-| Before/after screenshots, in one browser session | about 10 s |
-| Report: Claude writes only `report.json`; `build.mjs` renders HTML and PDF and re-verifies the page | about 10 s |
+| Evidence: TTFB, then raw HTML + link check + sitemap, Google PageSpeed, and a desktop + mobile Chrome session in parallel, then Lighthouse mobile | 40–60 s |
+| Desktop Lighthouse (when PageSpeed has no desktop result) | in the background while Claude reads the evidence |
+| Issues: 2–3 `issue-writer` agents write them in parallel while Claude takes the before/after screenshots | 1–2 min |
+| Build: re-verify the page (in parallel), HTML, PDF and an automatic layout check | 10–20 s |
+
+Several pages: one `page-auditor` agent per page, all at once (Lighthouse runs take turns automatically).
 
 Claude reads a condensed `summary.md` instead of large JSON files.
 

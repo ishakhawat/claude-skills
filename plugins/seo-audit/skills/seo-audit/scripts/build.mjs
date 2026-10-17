@@ -6,13 +6,14 @@
 // Opens the PDF (or the HTML with --no-pdf) in the system viewer when done,
 // unless --no-open or SEO_AUDIT_NO_OPEN=1.
 //
-// Reads report.json (the issues you wrote; see references/report-json.md)
+// Reads report.json plus any issues/*.json files (one issue object, or an array,
+// per file: written in parallel by writer agents) — see references/report-json.md —
 // plus data/collect.json, data/lighthouse.json and data/checks.json for the
 // header facts, metric tiles, scorecard and passing checks. Before printing it
 // re-fetches the page and compares the modified time (the "Re-verified" line).
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { HERE, launch, resolveOut, openFile } from "./lib.mjs";
 import { CATEGORIES, THRESHOLDS, grade, lhMetrics } from "./checks.mjs";
@@ -26,6 +27,30 @@ const dir = existsSync(join(resolve(dirArg), "report.json")) ? resolve(dirArg) :
 const read = f => existsSync(join(dir, f)) ? JSON.parse(readFileSync(join(dir, f), "utf8")) : null;
 const R = read("report.json");
 if (!R) { console.error("Missing " + join(dir, "report.json")); process.exit(1); }
+// Issues written by parallel writer agents: issues/<key>.json, merged after report.json's own.
+if (existsSync(join(dir, "issues"))) {
+  const extra = readdirSync(join(dir, "issues")).filter(f => f.endsWith(".json")).sort().flatMap(f => {
+    try { const j = JSON.parse(readFileSync(join(dir, "issues", f), "utf8")); return Array.isArray(j) ? j : j.issues || [j]; }
+    catch (e) { console.error(`issues/${f}: invalid JSON (${e.message})`); process.exit(1); }
+  });
+  const keys = new Set((R.issues || []).map(x => x.key).filter(Boolean));
+  R.issues = [...(R.issues || []), ...extra.filter(x => !x.key || !keys.has(x.key))];
+}
+
+// Re-verify (re-fetch the page) while waiting for the background desktop Lighthouse run.
+let py = "python3"; try { execFileSync(py, ["--version"]); } catch { py = "python"; }
+const C0 = read("data/collect.json") || {};
+const reverifyJob = R.reverified || rest.includes("--no-reverify") || !C0.url ? Promise.resolve(null) : new Promise(res =>
+  execFile(py, ["-I", join(HERE, "collect.py"), C0.url, join(dir, "data", "collect-reverify.json"), "--no-linkcheck"], { timeout: 90000 },
+    err => res(err ? { error: err.message.split("\n")[0] } : JSON.parse(readFileSync(join(dir, "data", "collect-reverify.json"), "utf8")))));
+const pending = join(dir, "data", "desktop.pending");
+if (existsSync(pending)) {
+  console.log("waiting for the background desktop Lighthouse run...");
+  for (let i = 0; i < 240 && existsSync(pending); i++) await new Promise(r => setTimeout(r, 1000));
+  if (existsSync(pending)) console.warn("desktop Lighthouse still running after 4 min; building without it");
+}
+const reverifyResult = await reverifyJob;
+
 const C = read("data/collect.json") || {}, LH = read("data/lighthouse.json"), CK = read("data/checks.json");
 const TT = read("data/ttfb.json"), PS = read("data/pagespeed.json"), ROAD = read("data/road-to-100.json");
 
@@ -120,18 +145,15 @@ const issueHtml = x => `<section class="issue" id="${x.id.toLowerCase()}">
 
 // ---------- re-verify ----------
 let reverified = R.reverified || "";
-if (!reverified && !rest.includes("--no-reverify") && C.url) {
-  try {
-    const tmp = join(dir, "data", "collect-reverify.json");
-    let py = "python3"; try { execFileSync(py, ["--version"]); } catch { py = "python"; }
-    execFileSync(py, ["-I", join(HERE, "collect.py"), C.url, tmp, "--no-linkcheck"], { stdio: "pipe", timeout: 90000 });
-    const now = JSON.parse(readFileSync(tmp, "utf8"));
-    const t = new Date().toISOString();
+if (!reverified && reverifyResult) {
+  if (reverifyResult.error) console.warn("re-verify skipped: " + reverifyResult.error);
+  else {
+    const now = reverifyResult, t = new Date().toISOString();
     const same = (now.modified_time || "") === (C.modified_time || "");
     reverified = `${fmtDate(t)}` + (C.modified_time ? (same ? ` (no edits since ${new Date(C.modified_time).toISOString().slice(11, 16) || "?"})` : " (THE PAGE CHANGED since the audit: re-check affected issues)") : "");
     if (!same && C.modified_time) console.warn("WARNING: the page was edited after the evidence was collected (" + now.modified_time + ").");
     R._reverify_time = t; R._changed = !same;
-  } catch (e) { console.warn("re-verify skipped: " + e.message.split("\n")[0]); }
+  }
 }
 
 // ---------- header ----------
@@ -294,6 +316,14 @@ if (!rest.includes("--no-pdf")) {
     await page.evaluateHandle("document.fonts.ready");
     await page.emulateMediaType("screen");
     const h = await page.evaluate(() => Math.ceil(document.documentElement.scrollHeight));
+    // Layout check, so nobody has to eyeball the PDF: clipped code, wide tables, missing screenshots.
+    const problems = await page.evaluate(() => [
+      ...[...document.querySelectorAll("pre")].filter(e => e.scrollWidth > e.clientWidth + 2).map(e => "code block clipped: " + e.textContent.trim().slice(0, 60)),
+      ...[...document.querySelectorAll("table")].filter(e => e.scrollWidth > e.parentElement.clientWidth + 2).map(e => "table wider than the page: " + e.textContent.trim().slice(0, 60)),
+      ...[...document.images].filter(i => !i.complete || !i.naturalWidth).map(i => "image missing: " + i.getAttribute("src")),
+      ...[...document.querySelectorAll(".issue")].filter(e => e.scrollWidth > e.clientWidth + 2).map(e => "issue overflows: " + e.id)]);
+    for (const p of problems) console.warn("LAYOUT: " + p);
+    if (!problems.length) console.log("layout check: no clipped code, wide tables or missing images");
     const maxPx = 19000; // Chrome's single-page limit is about 200 inches
     // Taller reports are scaled down to stay one page (vector text stays sharp); very tall ones are split.
     const scale = h <= maxPx ? 1 : maxPx / (h + 2) >= 0.55 ? Math.floor(maxPx / (h + 2) * 1000) / 1000 : 1;

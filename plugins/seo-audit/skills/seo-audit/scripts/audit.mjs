@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 // Collect all evidence for one page in a single parallel run.
 //
-//   node audit.mjs <url> [out-dir] [--no-lighthouse] [--no-pagespeed] [--no-desktop] [--no-linkcheck] [--no-full]
+//   node audit.mjs <url> [out-dir] [--no-lighthouse] [--no-pagespeed] [--no-linkcheck] [--no-full]
+//
+// When Google PageSpeed has no desktop result, the local desktop Lighthouse run
+// (~25 s) continues in the background after this script prints "done", so you
+// can start reading summary.md; build.mjs waits for it (data/desktop.pending).
 //
 // out-dir defaults to seo-audit-<host>-<slug>. A relative out-dir lands in the
 // current folder, or in ~/SEO Audits when the current folder is a
@@ -24,6 +28,7 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync, existsSync, readFileSync, unlinkSync, statSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { HERE, CACHE, CHROME, depPath, launch, open, warm, inspect, sections, sleep, resolveOut, defaultOutName } from "./lib.mjs";
 import { buildChecks, summaryMarkdown } from "./checks.mjs";
 import { psiKey, fetchPSI, fieldData, roadTo100, scoresOf, readJSON, speedMarkdown } from "./pagespeed.mjs";
@@ -36,9 +41,10 @@ if (!url || url === "--help") {
 const outArg = args[0] && !args[0].startsWith("--") ? args[0] : defaultOutName(url);
 const rest = args;
 const flag = f => rest.includes("--" + f);
+const desktopOnly = flag("desktop-only"); // internal: the background desktop run
 const out = resolveOut(outArg), data = join(out, "data"), shots = join(out, "shots");
 mkdirSync(data, { recursive: true }); mkdirSync(shots, { recursive: true });
-console.log("Output folder: " + out);
+if (!desktopOnly) console.log("Output folder: " + out);
 const t0 = Date.now();
 const secs = () => ((Date.now() - t0) / 1000).toFixed(0) + "s";
 
@@ -59,7 +65,7 @@ async function pythonCmd() {
 }
 
 // 0. TTFB first, on its own: Lighthouse and Chrome running alongside inflate it (TLS alone by ~1 s).
-{
+if (!desktopOnly) {
   const r = await run(await pythonCmd(), ["-I", join(HERE, "ttfb.py"), url, join(data, "ttfb.json")], { timeout: 120000 });
   console.log(`[${secs()}] ${(r.so || r.se).trim().split("\n").pop()}`);
 }
@@ -71,6 +77,7 @@ if (finalUrl !== url) console.log(`[${secs()}] scoring the final URL ${finalUrl}
 // Google PageSpeed Insights runs on Google's servers, so it runs alongside everything below; it takes 20–60 s.
 const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[^/]+\.(test|localhost|local))(:|\/|$)/.test(url);
 const psiJob = (async () => {
+  if (desktopOnly) return null;
   if (flag("no-pagespeed")) return { mobile: { ok: false, msg: "skipped (--no-pagespeed)" }, desktop: { ok: false, msg: "skipped (--no-pagespeed)" } };
   if (isLocal) return { mobile: { ok: false, msg: "local site: Google can't reach it" }, desktop: { ok: false, msg: "local site: Google can't reach it" } };
   const key = psiKey();
@@ -81,7 +88,7 @@ const psiJob = (async () => {
 })();
 
 // 1. raw HTML collector
-const collectJob = (async () => {
+const collectJob = desktopOnly ? null : (async () => {
   const py = await pythonCmd();
   if (!py) return { ok: false, msg: "Python 3 not found" };
   const args = ["-I", join(HERE, "collect.py"), url, join(data, "collect.json")];
@@ -93,7 +100,7 @@ const collectJob = (async () => {
 
 // 2. Lighthouse (own Chrome instance)
 const lhPath = join(data, "lighthouse.json");
-for (const f of ["lighthouse.json", "lighthouse-desktop.json", "lighthouse-local.json", "psi-mobile.json", "psi-desktop.json"]) if (existsSync(join(data, f))) unlinkSync(join(data, f));
+if (!desktopOnly) for (const f of ["lighthouse.json", "lighthouse-desktop.json", "lighthouse-local.json", "psi-mobile.json", "psi-desktop.json", "desktop.pending"]) if (existsSync(join(data, f))) unlinkSync(join(data, f));
 const lhValid = (p = lhPath) => { try { const j = JSON.parse(readFileSync(p, "utf8")); return !j.runtimeError && j.categories?.performance?.score != null; } catch { return false; } };
 // Two Lighthouse runs at once starve each other ("unable to reliably load the page"),
 // so audits started in parallel take turns through a lock directory.
@@ -132,6 +139,25 @@ async function runLighthouseNow(desktop, plainUA) {
 // Lighthouse runs after the collector and the Chrome session, not alongside them: their downloads
 // (videos especially) compete for bandwidth and inflated its server response from 0.6 s to 4.4 s.
 const lhJob = () => flag("no-lighthouse") ? Promise.resolve({ ok: false, msg: "skipped (--no-lighthouse)" }) : runLighthouse();
+
+// Background desktop run: Lighthouse desktop, then refresh pagespeed.json and road-to-100.json.
+if (desktopOnly) {
+  const pending = join(data, "desktop.pending");
+  try {
+    const r = (await runLighthouse(true)).ok || (await runLighthouse(true, true)).ok;
+    const ps = readJSON(join(data, "pagespeed.json")) || {}, road = readJSON(join(data, "road-to-100.json")) || {};
+    if (r) {
+      const lhD = readJSON(join(data, "lighthouse-desktop.json"));
+      ps.desktop = scoresOf(lhD); ps.sources = { ...ps.sources, desktop: "Lighthouse (local)" };
+      road.desktop = roadTo100(lhD, readJSON(join(data, "collect.json"))?.platform || {});
+    } else ps.status = { ...ps.status, desktop: "local Lighthouse desktop failed" };
+    writeFileSync(join(data, "pagespeed.json"), JSON.stringify(ps, null, 1));
+    writeFileSync(join(data, "road-to-100.json"), JSON.stringify(road, null, 1));
+    const s = ps.desktop;
+    writeFileSync(join(data, "summary-desktop.md"), s ? `Desktop (Lighthouse local): Performance ${s.performance}, Accessibility ${s.accessibility}, Best practices ${s.best_practices}, SEO ${s.seo}; LCP ${Math.round(s.lcp)} ms, FCP ${Math.round(s.fcp)} ms, TBT ${Math.round(s.tbt)} ms, CLS ${s.cls?.toFixed(3)}\n` : "Desktop Lighthouse failed.\n");
+  } finally { rmSync(pending, { force: true }); }
+  process.exit(0);
+}
 
 // 3. Rendered page: desktop and mobile in parallel, one browser
 const browserJob = (async () => {
@@ -172,10 +198,13 @@ const browserJob = (async () => {
 })();
 
 let [c, b] = await Promise.all([collectJob, browserJob]);
-let l = await lhJob();
-const psi = await psiJob;
+// With a working PageSpeed result the local mobile run is redundant: skip it (~25 s).
+let psi = await Promise.race([psiJob, sleep(500).then(() => null)]);
+if (!psi && psiKey() && !isLocal && !flag("no-pagespeed")) psi = await psiJob;
+let l = psi?.mobile?.ok ? { ok: false, msg: "not needed (PageSpeed ran)" } : await lhJob();
+psi = psi || await psiJob;
 // Lighthouse is sensitive to CPU load; retry once on its own if the parallel run failed.
-if (!l.ok && !flag("no-lighthouse") && !/not installed/.test(l.msg)) { console.log(`[${secs()}] lighthouse: retrying alone`); l = await runLighthouse(false, /520|403|ERRORED_DOCUMENT|reliably load/.test(l.msg)); }
+if (!l.ok && !psi?.mobile?.ok && !flag("no-lighthouse") && !/not installed/.test(l.msg)) { console.log(`[${secs()}] lighthouse: retrying alone`); l = await runLighthouse(false, /520|403|ERRORED_DOCUMENT|reliably load/.test(l.msg)); }
 if (!c.ok) { console.error("collect.py failed: " + c.msg); process.exit(1); }
 
 // PageSpeed's own Lighthouse run is the primary source when it worked (it's what
@@ -186,10 +215,7 @@ if (psi.mobile.ok) {
   writeFileSync(lhPath, JSON.stringify(psi.mobile.json.lighthouseResult)); sources.mobile = "pagespeed";
 } else if (!l.ok) sources.mobile = null;
 if (psi.desktop.ok) { writeFileSync(join(data, "lighthouse-desktop.json"), JSON.stringify(psi.desktop.json.lighthouseResult)); sources.desktop = "pagespeed"; }
-else if (!flag("no-desktop") && !flag("no-lighthouse")) {
-  console.log(`[${secs()}] lighthouse desktop: running locally (PageSpeed desktop unavailable)`);
-  if ((await runLighthouse(true)).ok || (await runLighthouse(true, true)).ok) sources.desktop = "local";
-}
+const desktopLater = !psi.desktop.ok && !flag("no-lighthouse");
 const platform = readJSON(join(data, "collect.json"))?.platform || {};
 const lhM = readJSON(lhPath), lhD = readJSON(join(data, "lighthouse-desktop.json"));
 const label = s => s === "pagespeed" ? "Google PageSpeed Insights" : s === "local" ? "Lighthouse (local)" : null;
@@ -212,5 +238,11 @@ writeFileSync(join(data, "summary.md"), summaryMarkdown({ url, collect, rendered
   speedMarkdown(read("ttfb.json"), pagespeed, read("road-to-100.json")));
 const n = s => checks.filter(x => x.status === s).length;
 console.log(`[${secs()}] done: ${n("fail")} fail, ${n("warn")} warn, ${n("pass")} pass -> ${join(data, "summary.md")}`);
+if (desktopLater) {
+  // Desktop Lighthouse continues on its own; build.mjs waits for data/desktop.pending to go.
+  writeFileSync(join(data, "desktop.pending"), String(Date.now()));
+  spawn(process.execPath, [fileURLToPath(import.meta.url), url, out, "--desktop-only"], { detached: true, stdio: "ignore" }).unref();
+  console.log(`[${secs()}] desktop Lighthouse running in the background (~25 s); results land in data/summary-desktop.md`);
+}
 
 process.exit(process.exitCode || 0);
