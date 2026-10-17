@@ -26,7 +26,7 @@
 //   data/summary.md    (read this first: everything condensed)
 //   shots/desktop-top.png  shots/mobile-top.png  shots/desktop-full.jpg
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync, existsSync, readFileSync, unlinkSync, statSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, readFileSync, unlinkSync, statSync, rmSync, readdirSync, renameSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HERE, CACHE, CHROME, depPath, launch, open, warm, inspect, sections, sleep, resolveOut, defaultOutName } from "./lib.mjs";
@@ -44,7 +44,17 @@ const flag = f => rest.includes("--" + f);
 const desktopOnly = flag("desktop-only"); // internal: the background desktop run
 const out = resolveOut(outArg), data = join(out, "data"), shots = join(out, "shots");
 mkdirSync(data, { recursive: true }); mkdirSync(shots, { recursive: true });
-if (!desktopOnly) console.log("Output folder: " + out);
+if (!desktopOnly) {
+  console.log("Output folder: " + out);
+  // A re-run starts a fresh report: move the previous one aside so build.mjs doesn't merge stale issues/*.json.
+  const prev = ["report.json", "issues", "report.html", ...readdirSync(out).filter(f => f.endsWith(" - SEO Audit.pdf"))].filter(f => existsSync(join(out, f)));
+  if (prev.length) {
+    const dest = join(out, "previous-" + new Date().toISOString().slice(0, 19).replace(/[-:T]/g, ""));
+    mkdirSync(dest, { recursive: true });
+    for (const f of prev) renameSync(join(out, f), join(dest, f));
+    console.log("Previous report moved to " + dest);
+  }
+}
 const t0 = Date.now();
 const secs = () => ((Date.now() - t0) / 1000).toFixed(0) + "s";
 
