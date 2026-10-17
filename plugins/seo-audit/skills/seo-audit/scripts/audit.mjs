@@ -104,7 +104,7 @@ const browserJob = (async () => {
       if (!flag("no-full")) await o.page.screenshot({ path: join(shots, "desktop-full.jpg"), fullPage: true, type: "jpeg", quality: 55 }).catch(() => {});
       await o.page.close();
       return { ...first, broken_images: after.broken_images, missing_anchor_targets: after.missing_anchor_targets,
-        console_errors: [...new Set(o.errors)].slice(0, 15), failed_requests: o.failed.slice(0, 20), media_requests: o.media, sections: secs_ };
+        console_errors: [...new Set(o.errors)].slice(0, 15), failed_requests: o.failed.slice(0, 20), media_requests: o.media.snapshot(), sections: secs_ };
     })();
     const mobile = (async () => {
       const o = await open(browser, url, 390);
@@ -114,7 +114,7 @@ const browserJob = (async () => {
       await o.page.screenshot({ path: join(shots, "mobile-top.png") });
       await o.page.close();
       return { ...first, after_wait: { h1_covered_by: later.h1_covered_by, large_overlays: later.large_overlays, chat_widgets: later.chat_widgets },
-        console_errors: [...new Set(o.errors)].slice(0, 15), failed_requests: o.failed.slice(0, 20), media_requests: o.media };
+        console_errors: [...new Set(o.errors)].slice(0, 15), failed_requests: o.failed.slice(0, 20), media_requests: o.media.snapshot() };
     })();
     const [d, m] = await Promise.all([desktop, mobile]);
     const { sections: s, ...dRest } = d;

@@ -129,7 +129,9 @@ export function buildChecks(c, r, lh) {
     lcp.src, "High", false);
   const vids = (mo?.media_requests || []).filter(x => x.bytes);
   const bigVid = vids.find(x => x.bytes > 5 * 1048576);
-  if (bigVid) add("Images & media", "video", false, `${kb(bigVid.bytes)} video downloads on mobile`, bigVid.url, "High", false);
+  const vidTotal = vids.reduce((t, x) => t + x.bytes, 0);
+  if (bigVid) add("Images & media", "video", false, `${kb(bigVid.bytes)} video downloaded on mobile (${kb(vidTotal)} of video in total)`, bigVid.url, "High", false);
+  else if (vidTotal > 3 * 1048576) add("Images & media", "video", false, `${kb(vidTotal)} of video downloaded on mobile`, vids.slice(0, 3).map(x => `${x.url.split("/").pop()} ${kb(x.bytes)}`).join(", "), "Medium");
 
   // Links
   const broken = L.redirecting_or_broken.filter(x => x.status >= 400 || x.status === 0);
@@ -246,7 +248,7 @@ export function summaryMarkdown({ url, collect: c, rendered: r, lh, sections, ch
     line(`Mobile: H1 covered by ${m.after_wait.h1_covered_by.join(", ") || "nothing"}; overlays ${m.after_wait.large_overlays.map(o => `${o.loc} ${Math.round(o.share * 100)}%`).join(", ") || "none"}; chat ${m.after_wait.chat_widgets.join(", ") || "none"}.`);
     if (m.lcp_candidate) line(`Mobile LCP image: ${m.lcp_candidate.src} (loading=${m.lcp_candidate.loading}, fetchpriority=${m.lcp_candidate.fetchpriority}, alt="${m.lcp_candidate.alt ?? ""}") \`${m.lcp_candidate.loc}\``);
     if (m.videos.length) line(`Videos on mobile: ${m.videos.map(v => `${v.src} playing=${v.playing}`).join("; ")}`);
-    if (m.media_requests.length) line(`Media downloaded on mobile: ${m.media_requests.map(x => `${x.url} ${x.bytes ? kb(x.bytes) : "?"}`).join("; ")}`);
+    if (m.media_requests.length) line(`Media transferred on mobile (bytes received, first ~8 s): ${m.media_requests.map(x => `${x.url} ${x.bytes ? kb(x.bytes) : "?"}`).join("; ")}`);
   }
 
   if (P) {

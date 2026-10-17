@@ -53,12 +53,20 @@ export async function open(browser, url, width, { height, wait = 1500 } = {}) {
   page.on("pageerror", e => errors.push(String(e.message || e).slice(0, 200)));
   page.on("console", m => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
   page.on("requestfailed", r => failed.push({ url: r.url().slice(0, 200), error: r.failure()?.errorText }));
-  page.on("response", r => {
-    const s = r.status();
-    if (s >= 400) failed.push({ url: r.url().slice(0, 200), status: s });
-    const t = r.request().resourceType();
-    if (t === "media") media.push({ url: r.url().slice(0, 200), bytes: +(r.headers()["content-length"] || 0) });
-  });
+  page.on("response", r => { const s = r.status(); if (s >= 400) failed.push({ url: r.url().slice(0, 200), status: s }); });
+  // Media: count bytes actually received. Content-Length overstates it, because
+  // preload="metadata" and range requests stop after the first part of the file.
+  const cdp = await page.createCDPSession();
+  await cdp.send("Network.enable");
+  const mediaIds = new Map();
+  cdp.on("Network.responseReceived", e => { if (e.type === "Media") mediaIds.set(e.requestId, { url: e.response.url.slice(0, 200), bytes: 0 }); });
+  cdp.on("Network.dataReceived", e => { const m = mediaIds.get(e.requestId); if (m) m.bytes += e.encodedDataLength || e.dataLength || 0; });
+  cdp.on("Network.loadingFinished", e => { const m = mediaIds.get(e.requestId); if (m && e.encodedDataLength > m.bytes) m.bytes = e.encodedDataLength; });
+  Object.defineProperty(media, "snapshot", { value: () => {
+    const byUrl = new Map();
+    for (const m of mediaIds.values()) byUrl.set(m.url, (byUrl.get(m.url) || 0) + m.bytes);
+    return [...byUrl].map(([url, bytes]) => ({ url, bytes })).sort((a, b) => b.bytes - a.bytes);
+  } });
   // "load" plus a capped idle wait: networkidle never settles on pages that stream video or poll.
   await page.goto(url, { waitUntil: "load", timeout: 45000 }).catch(e => errors.push("goto: " + e.message));
   await page.waitForNetworkIdle({ idleTime: 500, timeout: 6000 }).catch(() => {});
