@@ -184,9 +184,11 @@ function block(b) {
       const src = b.source === "desktop" ? "desktop" : "mobile";
       const strip = (rec, cls, label, lead) => {
         const { fcp, lcp } = rec, all = rec.frames, at = t => all.find(f => f.t >= t) || all.at(-1);
-        const span = Math.max(lcp, fcp) || all.at(-1).t;
-        const targets = [all[0].t, ...[0, .25, .5, .75].map(k => fcp + (span - fcp) * k), lcp, all.at(-1).t];
-        const frames = [...new Set([all.filter(f => f.t < fcp).at(-1), ...targets.map(at)].filter(Boolean))].sort((a, b) => a.t - b.t).slice(0, 10);
+        // Spread frames from first paint to the end of the recording, not just to LCP: LCP can come early
+        // (a logo) while the main content is still hidden, and the strip must show that gap.
+        const end = all.at(-1).t;
+        const targets = [all[0].t, ...[0, .15, .3, .45, .6, .75, .9].map(k => fcp + (end - fcp) * k), lcp, end];
+        const frames = [...new Set([all.filter(f => f.t < fcp).at(-1), ...targets.map(at)].filter(Boolean))].sort((a, b) => a.t - b.t).slice(0, 11);
         const lcpIdx = frames.findIndex(f => f.t >= lcp);
         return `<div class="box ${cls} film-box"><div class="box-label">${esc(label)}</div><div class="film">${frames.map((f, i) =>
           `<figure class="${i === lcpIdx ? "lcp" : f.t < fcp ? "blank" : ""}"><img src="${f.src}" alt=""><figcaption>${(f.t / 1000).toFixed(1)} s${i === lcpIdx ? " · LCP" : ""}</figcaption></figure>`).join("")}</div>
