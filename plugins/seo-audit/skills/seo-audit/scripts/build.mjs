@@ -84,7 +84,11 @@ function block(b) {
       const layout = b.layout || ((b.width || 1440) < 768 ? "phones" : "stack");
       return `<div class="pair ${layout}">${shotBox(b.before, "before", layout === "phones" ? "Before · Live, 390 px" : "Before · Live, desktop")}${shotBox(b.after, "after", "After · Proposed")}</div>`;
     }
-    case "shot": return `<div class="pair stack">${shotBox(b, b.after ? "after" : "before", b.label || "Live")}</div>`;
+    case "shot": {
+      // A phone screenshot shown alone stays phone-sized instead of filling the page width.
+      const phone = (b.width || 1440) < 768 || /mobile|390/.test(b.src + " " + (b.label || ""));
+      return `<div class="pair ${phone ? "phones" : "stack"}">${shotBox(b, b.after ? "after" : "before", b.label || (phone ? "Live, 390 px" : "Live"))}</div>`;
+    }
     case "metrics": return (b.tiles ? metricTiles(b.tiles) : lhTiles()) + `<p class="note">${refs(b.caption || lhCaption())}</p>`;
     case "table": return `<table class="table data"><thead><tr>${b.head.map(h => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${
       b.rows.map(r => `<tr>${r.map(c => `<td>${refs(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;

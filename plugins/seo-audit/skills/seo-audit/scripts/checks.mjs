@@ -65,8 +65,8 @@ export function buildChecks(c, r, lh) {
     if (!m.description && d.description_rendered) jsOnly.push("meta description");
     if (!ix.canonical && d.canonical_rendered) jsOnly.push("canonical");
     if (!og["og:title"] && d.og_title_rendered) jsOnly.push("og:title");
-    if (m.title && d.title && m.title.trim() !== d.title.trim()) jsOnly.push(`title changes to "${d.title.slice(0, 70)}"`);
-    add("Indexing", "js_head", !jsOnly.length, jsOnly.length ? `Head tags set only by JavaScript: ${jsOnly.join(", ")}` : "Head tags are in the server HTML",
+    const changed = m.title && d.title && m.title.trim() !== d.title.trim() ? `title changes after JavaScript runs, from "${m.title.trim()}" (${m.title.trim().length}) to "${d.title.trim()}" (${d.title.trim().length})` : "";
+    add("Indexing", "js_head", !jsOnly.length && !changed, jsOnly.length ? `Head tags set only by JavaScript: ${jsOnly.join(", ")}${changed ? "; " + changed : ""}` : changed ? `Head tags differ: ${changed}` : "Head tags are in the server HTML",
       c.inertia ? `Inertia page ${c.inertia.component}${c.inertia.ssr ? " (SSR)" : " (no SSR)"}` : "", "High");
   }
   if (c.inertia) add("Content & headings", "inertia_ssr", c.inertia.ssr, c.inertia.ssr ? `Inertia SSR on (${c.inertia.component})` : `Inertia page ${c.inertia.component} is rendered in the browser only (no SSR)`,

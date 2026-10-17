@@ -58,23 +58,27 @@ async function pythonCmd() {
   return null;
 }
 
-// Google PageSpeed Insights runs on Google's servers, so start it first; it takes 20–60 s.
-const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[^/]+\.(test|localhost|local))(:|\/|$)/.test(url);
-const psiJob = (async () => {
-  if (flag("no-pagespeed")) return { mobile: { ok: false, msg: "skipped (--no-pagespeed)" }, desktop: { ok: false, msg: "skipped (--no-pagespeed)" } };
-  if (isLocal) return { mobile: { ok: false, msg: "local site: Google can't reach it" }, desktop: { ok: false, msg: "local site: Google can't reach it" } };
-  const key = psiKey();
-  const [mobile, desktop] = await Promise.all(["mobile", "desktop"].map(st => fetchPSI(url, st, key)));
-  for (const [st, r] of [["mobile", mobile], ["desktop", desktop]]) if (r.ok) writeFileSync(join(data, `psi-${st}.json`), JSON.stringify(r.json));
-  console.log(`[${secs()}] pagespeed: mobile ${mobile.ok ? "done" : "failed: " + mobile.msg}; desktop ${desktop.ok ? "done" : "failed: " + desktop.msg}`);
-  return { mobile, desktop, keyed: !!key };
-})();
-
 // 0. TTFB first, on its own: Lighthouse and Chrome running alongside inflate it (TLS alone by ~1 s).
 {
   const r = await run(await pythonCmd(), ["-I", join(HERE, "ttfb.py"), url, join(data, "ttfb.json")], { timeout: 120000 });
   console.log(`[${secs()}] ${(r.so || r.se).trim().split("\n").pop()}`);
 }
+// Score the page itself, not a redirect to it: Lighthouse on http:// or a non-canonical host
+// fails "uses HTTPS" and adds the redirect time to every metric.
+const finalUrl = readJSON(join(data, "ttfb.json"))?.final_url || url;
+if (finalUrl !== url) console.log(`[${secs()}] scoring the final URL ${finalUrl} (${url} redirects)`);
+
+// Google PageSpeed Insights runs on Google's servers, so it runs alongside everything below; it takes 20–60 s.
+const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[^/]+\.(test|localhost|local))(:|\/|$)/.test(url);
+const psiJob = (async () => {
+  if (flag("no-pagespeed")) return { mobile: { ok: false, msg: "skipped (--no-pagespeed)" }, desktop: { ok: false, msg: "skipped (--no-pagespeed)" } };
+  if (isLocal) return { mobile: { ok: false, msg: "local site: Google can't reach it" }, desktop: { ok: false, msg: "local site: Google can't reach it" } };
+  const key = psiKey();
+  const [mobile, desktop] = await Promise.all(["mobile", "desktop"].map(st => fetchPSI(finalUrl, st, key)));
+  for (const [st, r] of [["mobile", mobile], ["desktop", desktop]]) if (r.ok) writeFileSync(join(data, `psi-${st}.json`), JSON.stringify(r.json));
+  console.log(`[${secs()}] pagespeed: mobile ${mobile.ok ? "done" : "failed: " + mobile.msg}; desktop ${desktop.ok ? "done" : "failed: " + desktop.msg}`);
+  return { mobile, desktop, keyed: !!key };
+})();
 
 // 1. raw HTML collector
 const collectJob = (async () => {
@@ -114,7 +118,7 @@ async function runLighthouseNow(desktop, plainUA) {
   const outPath = join(data, desktop ? "lighthouse-desktop.json" : "lighthouse.json");
   const cli = depPath("lighthouse/cli/index.js");
   if (!cli) return { ok: false, msg: "Lighthouse not installed (run setup.mjs)" };
-  const r = await run(process.execPath, [cli, url, ...(desktop ? ["--preset=desktop"] : ["--form-factor=mobile", "--screenEmulation.mobile"]),
+  const r = await run(process.execPath, [cli, finalUrl, ...(desktop ? ["--preset=desktop"] : ["--form-factor=mobile", "--screenEmulation.mobile"]),
     "--only-categories=performance,accessibility,best-practices,seo", "--output=json",
     `--output-path=${outPath}`, "--chrome-flags=--headless=new --no-sandbox" + (/^https?:\/\/(localhost|127\.0\.0\.1|[^/]+\.(test|localhost|local))(:|\/|$)/.test(url) ? " --ignore-certificate-errors" : ""), "--quiet", "--max-wait-for-load=45000",
     ...(plainUA ? [`--emulated-user-agent=${PLAIN_UA[desktop ? "desktop" : "mobile"]}`] : [])],
@@ -125,7 +129,9 @@ async function runLighthouseNow(desktop, plainUA) {
   console.log(`[${secs()}] lighthouse${desktop ? " desktop" : ""}: ${ok ? "done" : "failed: " + msg.slice(0, 160)}`);
   return { ok, msg: ok ? "" : msg };
 }
-const lhJob = flag("no-lighthouse") ? Promise.resolve({ ok: false, msg: "skipped (--no-lighthouse)" }) : runLighthouse();
+// Lighthouse runs after the collector and the Chrome session, not alongside them: their downloads
+// (videos especially) compete for bandwidth and inflated its server response from 0.6 s to 4.4 s.
+const lhJob = () => flag("no-lighthouse") ? Promise.resolve({ ok: false, msg: "skipped (--no-lighthouse)" }) : runLighthouse();
 
 // 3. Rendered page: desktop and mobile in parallel, one browser
 const browserJob = (async () => {
@@ -165,7 +171,9 @@ const browserJob = (async () => {
   } finally { await browser.close(); }
 })();
 
-let [c, l, b, psi] = await Promise.all([collectJob, lhJob, browserJob, psiJob]);
+let [c, b] = await Promise.all([collectJob, browserJob]);
+let l = await lhJob();
+const psi = await psiJob;
 // Lighthouse is sensitive to CPU load; retry once on its own if the parallel run failed.
 if (!l.ok && !flag("no-lighthouse") && !/not installed/.test(l.msg)) { console.log(`[${secs()}] lighthouse: retrying alone`); l = await runLighthouse(false, /520|403|ERRORED_DOCUMENT|reliably load/.test(l.msg)); }
 if (!c.ok) { console.error("collect.py failed: " + c.msg); process.exit(1); }
@@ -190,7 +198,7 @@ const pagespeed = {
   status: { mobile: psi.mobile.ok ? "ok" : psi.mobile.msg, desktop: psi.desktop.ok ? "ok" : psi.desktop.msg, api_key: !!psi.keyed },
   mobile: scoresOf(lhM), desktop: scoresOf(lhD),
   field: psi.mobile.ok ? fieldData(psi.mobile.json) : null, field_desktop: psi.desktop.ok ? fieldData(psi.desktop.json) : null,
-  report_url: `https://pagespeed.web.dev/analysis?url=${encodeURIComponent(url)}`,
+  report_url: `https://pagespeed.web.dev/analysis?url=${encodeURIComponent(finalUrl)}`,
 };
 writeFileSync(join(data, "pagespeed.json"), JSON.stringify(pagespeed, null, 1));
 writeFileSync(join(data, "road-to-100.json"), JSON.stringify({ mobile: roadTo100(lhM, platform), desktop: roadTo100(lhD, platform) }, null, 1));
